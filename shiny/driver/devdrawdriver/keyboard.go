@@ -24,7 +24,7 @@ func keyboardEventHandler(notifier chan *key.Event) {
 	}
 	// Closing /dev/consctl will cause the keyboard to stop being in raw mode. So defer the close instead of
 	// closing it right away.
-	//defer ctl.Close()
+	defer ctl.Close()
 	rawon := []byte("rawon\n")
 	n, err := ctl.Write(rawon)
 	if err != nil || n != 6 {
@@ -68,6 +68,7 @@ func keyboardEventHandler(notifier chan *key.Event) {
 //	the unicode range for the ctrl-modified runes, and alt isn't possible
 //	because Plan 9 doesn't pass that along /dev/cons (it's used at a lower
 //	level to compose unicode codepoints that get passed to /dev/cons)
+// TODO: Look into using /dev/kbmap instead.
 func RuneToCode(r rune) (key.Code, key.Modifiers) {
 	// first handle ones that can easily be calculated from the
 	// ASCII ordering.

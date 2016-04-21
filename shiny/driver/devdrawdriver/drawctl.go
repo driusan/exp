@@ -25,20 +25,12 @@ type DrawCtlMsg struct {
 }
 
 func NewDrawCtrler(n int) (*DrawCtrler, *DrawCtlMsg) {
-	var filename string
-	if n == 0 {
-		filename = "/dev/draw/new"
-	} else {
-		//	filename = fmt.Sprintf("/dev/draw/%d/ctl", n)
-		filename = "/dev/draw/new"
-	}
+	filename := "/dev/draw/new"
 	f, err := os.Open(filename)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not open %s: %s\n", filename, err)
 		return nil, nil
 	}
-	// we actually don't use this, after initially parsing, so close it even though
-	// we're holding a reference in the DrawCtrler returned
 
 	dc := DrawCtrler{}
 	ctlString := dc.readCtlString(f)
@@ -47,49 +39,37 @@ func NewDrawCtrler(n int) (*DrawCtrler, *DrawCtlMsg) {
 		fmt.Fprintf(os.Stderr, "Could not parse ctl string from %s: %s\n", filename, ctlString)
 		return &dc, nil
 	}
-	/*
-		if msg == nil {
-			//TODO: read the clipping rectangle from /dev/wctl, and figure out where to get
-			// the displaySize from (although do we even care?)
-			msg = &DrawCtlMsg{
-				N: n,
-			}
-		}*/
+	//TODO: read the clipping rectangle from /dev/wctl, (maybe have another goroutine monitoring it for resize
+	// events?)
 
-	/*
-	msg := &DrawCtlMsg {
-		N: 1,
-		DisplayImageId: 1,
-	}
-
-	msg.N = 1*/
 	if msg.N >= 1 {
-		fmt.Printf("opening data")
+		// open the data channel for the connection we just created so we can send messages to it.
+		//
 		dfilename := fmt.Sprintf("/dev/draw/%d/data", msg.N)
 		f, err := os.OpenFile(dfilename, os.O_RDWR, 0)
-		 if err != nil {
-			 fmt.Fprintf(os.Stderr, "Could not open %s: %s\n", dfilename, err)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Could not open %s: %s\n", dfilename, err)
 			return &dc, msg
-		 }
+		}
 		dc.data = f
-		fmt.Printf("opening ctl\n")
-		// don't defer close() this, because it'll be used by NewBuffer/Window/Texture later.
+		// We don't close it so that it doesn't disappear from the /dev filesystem on us.
 		// It needs to be closed when the screen is cleaned up.
-cfilename := fmt.Sprintf("/dev/draw/%d/ctl", msg.N)
-		ctlfile, err := os.OpenFile(cfilename, os.O_RDWR, 0)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error converting keyboard input to raw mode. Could not open /dev/consctl.\n")
-					return &dc, msg
-			}
-		dc.ctl = ctlfile
-		fmt.Printf("returning")
-			return &dc, msg
-	}
-	fmt.Printf("returning without having opened anything\n")
 
+		// open the ctl file, even though we don't really use it
+		cfilename := fmt.Sprintf("/dev/draw/%d/ctl", msg.N)
+		ctlfile, err := os.OpenFile(cfilename, os.O_RDWR, 0)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Could not open %s: %s\n", dfilename, err)
+			return &dc, msg
+		}
+		dc.ctl = ctlfile
+	}
 	return &dc, msg
 }
 
+// reads the output of /dev/draw/new or /dev/draw/n/ctl and returns it without
+// doing any parsing. It should be passed along to parseCtlString to create
+// a *DrawCtlMsg
 func (d DrawCtrler) readCtlString(f io.Reader) string {
 	var val []byte = make([]byte, 144)
 	n, err := f.Read(val)
@@ -102,21 +82,32 @@ func (d DrawCtrler) readCtlString(f io.Reader) string {
 	return string(val)
 }
 
+// sendMessage sends the command represented by cmd to the data channel,
+// with the raw arguments in val (n.b. They need to be in little endian
+// byte order and match the cmd arguments described in draw(3)
+// TODO: Write better wrappers around this that handle endian conversions
+//       and common arguments.
 func (d DrawCtrler) sendMessage(cmd byte, val []byte) {
-realCmd := append([]byte{cmd}, val...)
-		 fmt.Printf("Cmd Size %d: %s / %x\n", len(realCmd), realCmd, realCmd)
-		 n, err := d.data.Write(realCmd)
+	realCmd := append([]byte{cmd}, val...)
+	n, err := d.data.Write(realCmd)
 	if n != len(realCmd) || err != nil {
-		fmt.Printf("Panicked on %c\n", cmd)
+		// TODO: Use real error handling.
 		panic(err)
 	}
 }
+
+// Sends a message to /dev/draw/n/ctl.
+// This isn't used, but might be in the future.
 func (d DrawCtrler) sendCtlMessage(val []byte) {
 	n, err := d.ctl.Write(val)
 	if n != len(val) || err != nil {
+		// TODO: Use real error handling.
 		panic(err)
 	}
 }
+
+// parseCtlString parses the output of the format returned by /dev/draw/new.
+// It can also be used to parse a /dev/draw/n/ctl output, but isn't currently.
 func parseCtlString(drawString string) *DrawCtlMsg {
 	pieces := strings.Fields(drawString)
 	if len(pieces) != 12 {
@@ -142,6 +133,9 @@ func parseCtlString(drawString string) *DrawCtlMsg {
 		},
 	}
 }
+
+// helper function for parseCtlstring that returns a single value instead of a multi-value
+// so that it can be used inline..
 func strToInt(s string) int {
 	i, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"golang.org/x/exp/shiny/screen"
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
+	//	"golang.org/x/mobile/event/lifecycle"
 )
 
 // Main spawns 2 goroutines to make blocking read from /dev
@@ -16,6 +17,7 @@ import (
 func Main(f func(s screen.Screen)) {
 	mouseEvent := make(chan *mouse.Event)
 	keyboardEvent := make(chan *key.Event)
+	windowChan := make(chan *wctlEvent)
 	doneChan := make(chan bool)
 
 	s := newScreenImpl()
@@ -28,6 +30,10 @@ func Main(f func(s screen.Screen)) {
 	}()
 	go mouseEventHandler(mouseEvent)
 	go keyboardEventHandler(keyboardEvent)
+	go wctlEventHandler(windowChan)
+
+	var lastWindowEvent *wctlEvent
+
 	for {
 		select {
 		//case mEv := <-mouseEvent:
@@ -39,6 +45,24 @@ func Main(f func(s screen.Screen)) {
 			if s.w != nil {
 				fmt.Printf("Queuing: %s\n", kEv)
 				s.w.Queue.Send(*kEv)
+			}
+		case wEv := <-windowChan:
+			if lastWindowEvent == nil {
+				// reorder the window's coordinate system so that 0,0 is relative to the window.
+				repositionWindow(s.ctl, wEv.windowDimensions)
+				// TODO: Also send a lifecycle created event here.
+			} else {
+				repositionWindow(s.ctl, wEv.windowDimensions)
+				redrawImage2(s.ctl, wEv.windowDimensions)
+				//(ctrl *DrawCtrler, r image.Rectangle) {
+				//repositionWindow(s.ctl, wEv.windowDimensions)
+				// TODO: check if dimensions changed and send a resize event
+				// TODO: Check if active or current changed and send an appropriate event
+			}
+			lastWindowEvent = wEv
+			if s.w != nil {
+				fmt.Printf("Queuing: %s\n", wEv)
+				s.w.Queue.Send(*wEv)
 			}
 		case <-doneChan:
 			return

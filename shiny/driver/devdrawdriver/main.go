@@ -47,6 +47,8 @@ func Main(f func(s screen.Screen)) {
 				s.w.Queue.Send(*kEv)
 			}
 		case wEv := <-windowChan:
+			//TODO: Resize events also come off of /dev/mouse. We can probably get rid of this window
+			// chan.
 			if lastWindowEvent == nil {
 				// reorder the window's coordinate system so that 0,0 is relative to the window.
 				repositionWindow(s.ctl, wEv.windowDimensions)
@@ -68,12 +70,15 @@ func Main(f func(s screen.Screen)) {
 				//fmt.Printf("Queuing: %s\n", wEv)
 				//s.w.Queue.Send(*wEv)
 			}
-			if wEv != nil {
-				repositionWindow(s.ctl, wEv.windowDimensions)
-				redrawImage2(s.ctl, wEv.windowDimensions)
-			}
 		case <-doneChan:
 			return
+		}
+
+		// redraw the window after every event. This is mostly because otherwise the text printed via the
+		// test program overwrites the image, since it's in the same window on Plan9..
+		if lastWindowEvent != nil {
+			repositionWindow(s.ctl, lastWindowEvent.windowDimensions)
+			redrawImage2(s.ctl, lastWindowEvent.windowDimensions)
 		}
 	}
 }

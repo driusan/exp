@@ -10,6 +10,7 @@ import (
 )
 
 type DrawCtrler struct {
+	N    int
 	ctl  io.ReadWriteCloser
 	data io.ReadWriteCloser
 }
@@ -43,6 +44,7 @@ func NewDrawCtrler(n int) (*DrawCtrler, *DrawCtlMsg) {
 	// events?)
 
 	if msg.N >= 1 {
+		dc.N = msg.N
 		// open the data channel for the connection we just created so we can send messages to it.
 		//
 		dfilename := fmt.Sprintf("/dev/draw/%d/data", msg.N)
@@ -104,6 +106,13 @@ func (d DrawCtrler) sendCtlMessage(val []byte) {
 		// TODO: Use real error handling.
 		panic(err)
 	}
+}
+
+func (d DrawCtrler) refresh(val []byte) {
+	d.sendCtlMessage(val)
+	filename := fmt.Sprintf("/dev/draw/%d/refresh", d.N)
+	f, _ := os.Open(filename)
+	defer f.Close()
 }
 
 // parseCtlString parses the output of the format returned by /dev/draw/new.

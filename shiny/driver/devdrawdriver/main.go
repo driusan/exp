@@ -43,17 +43,21 @@ func Main(f func(s screen.Screen)) {
 			}
 		case kEv := <-keyboardEvent:
 			if s.w != nil {
-				fmt.Printf("Queuing: %s\n", kEv)
+				//fmt.Printf("Queuing: %s\n", kEv)
 				s.w.Queue.Send(*kEv)
 			}
 		case wEv := <-windowChan:
 			if lastWindowEvent == nil {
 				// reorder the window's coordinate system so that 0,0 is relative to the window.
 				repositionWindow(s.ctl, wEv.windowDimensions)
+				redrawImage2(s.ctl, wEv.windowDimensions)
 				// TODO: Also send a lifecycle created event here.
 			} else {
+				fmt.Printf("%s", wEv)
 				repositionWindow(s.ctl, wEv.windowDimensions)
 				redrawImage2(s.ctl, wEv.windowDimensions)
+				//repositionWindow(s.ctl, wEv.windowDimensions)
+				//redrawImage2(s.ctl, wEv.windowDimensions)
 				//(ctrl *DrawCtrler, r image.Rectangle) {
 				//repositionWindow(s.ctl, wEv.windowDimensions)
 				// TODO: check if dimensions changed and send a resize event
@@ -61,8 +65,12 @@ func Main(f func(s screen.Screen)) {
 			}
 			lastWindowEvent = wEv
 			if s.w != nil {
-				fmt.Printf("Queuing: %s\n", wEv)
-				s.w.Queue.Send(*wEv)
+				//fmt.Printf("Queuing: %s\n", wEv)
+				//s.w.Queue.Send(*wEv)
+			}
+			if wEv != nil {
+				repositionWindow(s.ctl, wEv.windowDimensions)
+				redrawImage2(s.ctl, wEv.windowDimensions)
 			}
 		case <-doneChan:
 			return

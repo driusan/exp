@@ -30,7 +30,7 @@ func wctlEventHandler(notifier chan *wctlEvent) {
 	}
 	defer ctl.Close()
 
-	event := make([]byte, 12*4 /* 4 numbers with whitespace padding */ +len("notvisible")+1 /* space */ +len("notcurrent"))
+	event := make([]byte, 12*4 /* 4 numbers with whitespace padding */ +len("notvisible")+1 /* space */ +len("notcurrent")+1000)
 	for {
 		// the message might not include the "not" prefix, so we don't care if we under-read
 		_, err := ctl.Read(event)
@@ -38,7 +38,7 @@ func wctlEventHandler(notifier chan *wctlEvent) {
 			panic(err)
 		}
 		sizes := strings.Fields(string(event))
-		if len(sizes) != 6 && len(sizes) != 7 /* For some reason Go thinks that 6=7 pieces of the string */ {
+		if len(sizes) != 6 && len(sizes) != 7 /* For some reason Go thinks that 6=7 pieces of the string. Seems to be a bug with Fields() */ {
 			fmt.Fprintf(os.Stderr, "Invalid message received on /dev/wctl (%d, %s)\n", len(sizes), sizes)
 			continue
 		}
@@ -48,8 +48,8 @@ func wctlEventHandler(notifier chan *wctlEvent) {
 				Min: image.Point{strToInt(sizes[0]), strToInt(sizes[1])},
 				Max: image.Point{strToInt(sizes[2]), strToInt(sizes[3])},
 			},
-			visible: (sizes[4] == "visible"),
-			active:  (sizes[5] == "current"),
+			active:  (sizes[4] == "current"),
+			visible: (sizes[5] == "visible"),
 		}
 
 	}

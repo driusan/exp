@@ -39,17 +39,17 @@ func mouseEventHandler(notifier chan *mouse.Event) {
 	}
 	defer mouseEvent.Close()
 
-	mouseMessage := make([]byte, 49)
+	mouseMessage := make([]byte, 100)
 	var previousEvent mouse.Event
 	for {
-		n, err := mouseEvent.Read(mouseMessage)
-		if n != 49 || err != nil {
+		_, err := mouseEvent.Read(mouseMessage)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Unexpected data from the mouse.\n")
 			continue
 
 		}
 		if mouseMessage[0] != 'm' || mouseMessage[12] != ' ' {
-			fmt.Fprintf(os.Stderr, "Invalid data from /dev/mouse.\n")
+			fmt.Fprintf(os.Stderr, "Unhandled data from /dev/mouse: %s\n", mouseMessage)
 		}
 
 		// /dev/mouse prints an ASCII integer number, but x/mobile/event/mouse.Event

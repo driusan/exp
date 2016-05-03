@@ -16,6 +16,25 @@ type wctlEvent struct {
 	visible, active  bool
 }
 
+func readWctl() (image.Rectangle, error) {
+	ctl, err := os.OpenFile("/dev/wctl", os.O_RDWR, 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting current window status.\n")
+		return image.ZR, err
+	}
+	defer ctl.Close()
+	value := make([]byte, 1024) // 1024 should be enough..
+	_, err = ctl.Read(value)
+	if err != nil {
+		return image.ZR, err
+	}
+	sizes := strings.Fields(string(value))
+	return image.Rectangle{
+		Min: image.Point{strToInt(sizes[0]), strToInt(sizes[1])},
+		Max: image.Point{strToInt(sizes[2]), strToInt(sizes[3])},
+	}, nil
+}
+
 // wctlEventHandler reads events on the current window that happened on
 // /dev/wctl and converts them to events which are passed along the notification
 // channel, where they'll be converted to shiny events in the main thread.

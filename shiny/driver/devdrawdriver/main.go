@@ -10,6 +10,8 @@ import (
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
 	//	"golang.org/x/mobile/event/lifecycle"
+	//"golang.org/x/mobile/event/paint"
+	"os"
 )
 
 // Main spawns 2 goroutines to make blocking read from /dev
@@ -17,10 +19,16 @@ import (
 func Main(f func(s screen.Screen)) {
 	mouseEvent := make(chan *mouse.Event)
 	keyboardEvent := make(chan *key.Event)
-	windowChan := make(chan *wctlEvent)
+	//windowChan := make(chan *wctlEvent)
 	doneChan := make(chan bool)
 
 	s := newScreenImpl()
+	windowSize, err := readWctl()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not read current window size.\n")
+		return
+	}
+	s.windowFrame = windowSize
 	go func() {
 		// run the callback with the screen implementation, then send
 		// a notification to break out of the infinite loop when it
@@ -28,12 +36,9 @@ func Main(f func(s screen.Screen)) {
 		f(s)
 		doneChan <- true
 	}()
+
 	go mouseEventHandler(mouseEvent)
 	go keyboardEventHandler(keyboardEvent)
-	go wctlEventHandler(windowChan)
-
-	var lastWindowEvent *wctlEvent
-
 	for {
 		select {
 		//case mEv := <-mouseEvent:
@@ -46,39 +51,17 @@ func Main(f func(s screen.Screen)) {
 				//fmt.Printf("Queuing: %s\n", kEv)
 				s.w.Queue.Send(*kEv)
 			}
-		case wEv := <-windowChan:
-			//TODO: Resize events also come off of /dev/mouse. We can probably get rid of this window
-			// chan.
-			if lastWindowEvent == nil {
-				// reorder the window's coordinate system so that 0,0 is relative to the window.
-				repositionWindow(s.ctl, wEv.windowDimensions)
-				redrawImage2(s.ctl, wEv.windowDimensions)
-				// TODO: Also send a lifecycle created event here.
-			} else {
-				fmt.Printf("%s", wEv)
-				repositionWindow(s.ctl, wEv.windowDimensions)
-				redrawImage2(s.ctl, wEv.windowDimensions)
-				//repositionWindow(s.ctl, wEv.windowDimensions)
-				//redrawImage2(s.ctl, wEv.windowDimensions)
-				//(ctrl *DrawCtrler, r image.Rectangle) {
-				//repositionWindow(s.ctl, wEv.windowDimensions)
-				// TODO: check if dimensions changed and send a resize event
-				// TODO: Check if active or current changed and send an appropriate event
-			}
-			lastWindowEvent = wEv
-			if s.w != nil {
-				//fmt.Printf("Queuing: %s\n", wEv)
-				//s.w.Queue.Send(*wEv)
-			}
 		case <-doneChan:
 			return
 		}
 
 		// redraw the window after every event. This is mostly because otherwise the text printed via the
 		// test program overwrites the image, since it's in the same window on Plan9..
+		/*
 		if lastWindowEvent != nil {
-			repositionWindow(s.ctl, lastWindowEvent.windowDimensions)
-			redrawImage2(s.ctl, lastWindowEvent.windowDimensions)
 		}
+		*/
+		repositionWindow(s, s.windowFrame)
+		redrawWindow(s, s.windowFrame)
 	}
 }

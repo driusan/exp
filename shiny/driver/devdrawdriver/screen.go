@@ -13,11 +13,21 @@ import (
 	"io/ioutil"
 )
 
+type windowId uint32
 type screenImpl struct {
+	// the active shiny window
 	w   *windowImpl
+
+	// the reference to /dev/draw/N/data to send
+	// messages to
 	ctl *DrawCtrler
-	//screenId int
-	dimensions *DrawCtlMsg
+
+	// the Plan 9 window that we're overlaying our shiny window
+	// onto.
+	windowFrame image.Rectangle
+
+	// list of existing window IDs that have been allocated
+	windows          []windowId
 }
 
 func (s *screenImpl) NewBuffer(size image.Point) (retBuf screen.Buffer, retErr error) {
@@ -33,6 +43,7 @@ func (s *screenImpl) NewTexture(size image.Point) (screen.Texture, error) {
 func (s *screenImpl) NewWindow(opts *screen.NewWindowOptions) (screen.Window, error) {
 	w := newWindowImpl(s)
 	s.w = w
+	s.windows = append(s.windows, w.winImageId)
 	return w, nil
 }
 
@@ -40,8 +51,6 @@ func newScreenImpl() *screenImpl {
 	ctrl, msg := NewDrawCtrler(0)
 	fmt.Printf("%s, %s\n", ctrl, msg)
 	if ctrl != nil {
-		//This draws a yellow square screen in the top-left corner using low level /dev/draw/n/data messages, mostly for testing.
-
 		// makes ID 0x0001 refer to the same image as /dev/winname on this process. I think?
 		ctrl.sendMessage('n', attachscreen())
 
@@ -51,93 +60,61 @@ func newScreenImpl() *screenImpl {
 			0, 0, 0, 1, // filled with the same image
 			1, // and make it public, because why not
 		})
-		/*
-			// this creates a uniform red image and sends it to /dev/draw/n/ctl, mostly for testing what the chan is.
-			ctrl.sendMessage('b', []byte{0, 0, 0, 3, // imageid
-				0, 0, 0, 0, // screenid
-				0,             // refresh
-				40, 24, 8, 72, // chan.. lovingly hand-crafted to be x8b8g8r8, the same as the reference by /dev/draw/new
-				1,          // replicate bit. This image image is basically the same as &image.Uniform{red}
-				0, 0, 0, 0, // r -> xmin
-				0, 0, 0, 0, // ymin
-				1, 0, 0, 0, // xmax
-				1, 0, 0, 0, // ymax
-				0, 0, 0, 0, // clipr -> xmin
-				0, 0, 0, 0, // ymin
-				0xff, 0xff, 0, 0, // xmax
-				0xff, 0xff, 0, 0, // ymax
-				255, 0, 0, 255, // rgba
-			})
-			ctrl.sendCtlMessage([]byte{0, 0, 0, 3}) // imageid
-		*/
-
-		// now allocate a image to represent our window. It's a 100x100 yellow square.
-		// TODO: This should be done from NewWindow, and have the right dimensions.
-		ctrl.sendMessage('b', []byte{0, 0, 0, 2, // create an image with an arbitrary id
-			0, 0, 0, 0, // on the screen we just created
-			0,             // refresh. 0 => refbackup, 2 => refmesg
-			40, 24, 8, 72, // chan.. lovingly hand-crafted to be an 8 bit RGBA channel
-			0,          // replicate bit. This image is normal, this can't be set on an image that has 'o' sent to it
-			0, 0, 0, 0, // r -> xmin
-			0, 0, 0, 0, // ymin
-			100, 0, 0, 0, // xmax
-			100, 0, 0, 0, // ymax
-			0, 0, 0, 0, // clipr -> xmin
-			0, 0, 0, 0, // ymin
-			100, 0, 0, 0, // xmax
-			100, 0, 0, 0, // ymax
-			255, 0, 255, 255, // rgba
-		})
-
-		//redrawRedSquare(ctrl, image.Rectangle{image.Point{100, 100}, image.Point{256, 300}})
-		// Flush the buffer. Not sure if this is needed, but why not..
-		//ctrl.sendMessage('v', []byte{})
-		//ctrl.refresh([]byte{0, 0, 0, 2})
 	}
 
-	// TODO: make sure the screen gets freed, and clean up the ctl handlers upon main exiting
 	s := &screenImpl{
-		//screenId: conId,
 		ctl:        ctrl,
-		dimensions: msg,
+		windows:    make([]windowId, 0),
 	}
 	return s
 }
 
-func repositionWindow(ctrl *DrawCtrler, r image.Rectangle) {
+// moves the current shiny windows to be overlaid on the current plan9 window
+// frame.
+func repositionWindow(s *screenImpl, r image.Rectangle) {
 	// reattach the window after a resize event
-	ctrl.sendMessage('f', []byte{0, 0, 0, 1})
-	ctrl.sendMessage('n', attachscreen())
+	s.ctl.sendMessage('f', []byte{0, 0, 0, 1})
+	s.ctl.sendMessage('n', attachscreen())
 
-	args := []byte{0, 0, 0, 2} // move image 2, our test window to the same location as wctl told us.
-	args = append(args,
-		0, 0, 0, 0, // reposition the window's internal coordinates so 0,0 is the top corner of the window
-		0, 0, 0, 0,
-	)
-	args = append(args, lelong(uint32(r.Min.X))...)
-	args = append(args, lelong(uint32(r.Min.Y))...)
-	ctrl.sendMessage('o', args)
-}
-
-// Debugging method. Draw a red square on image 2. This doesn't seem to work.
-func redrawImage2(ctrl *DrawCtrler, r image.Rectangle) {
-	args := []byte{
-		0, 0, 0, 1, // draw onto the attached window
-		0, 0, 0, 2, // our window - >0,0,0,2
-		0, 0, 0, 2, // use the same mask as our image so that it's opaque.
+	args := make([]byte, 20)
+	// 0-3 = windowId
+	// 4-7 = internal X. Always 0.
+	// 8-11 = internal Y. Always 0.
+	// 12-15 = top corner X on screen. The same as the windowFrame
+	// 16-19 = top corner Y. The same as the windowFrame.
+	binary.LittleEndian.PutUint32(args[12:], uint32(r.Min.X))
+	binary.LittleEndian.PutUint32(args[16:], uint32(r.Min.Y))
+	for _, winId := range s.windows {
+		binary.LittleEndian.PutUint32(args[0:], uint32(winId))
+		s.ctl.sendMessage('o', args)
 	}
-	args = append(args, lelong(uint32(r.Min.X))...) /* the rectangle is the window's rectangle. */
-	args = append(args, lelong(uint32(r.Min.Y))...)
-	args = append(args, lelong(uint32(r.Max.X))...)
-	args = append(args, lelong(uint32(r.Max.Y))...)
-	args = append(args,
-		0, 0, 0, 0, // 0,0 source point
-		0, 0, 0, 0,
-		0, 0, 0, 0, // 0,0 maskpoint
-		0, 0, 0, 0,
-	)
-	ctrl.sendMessage('d', args)
 }
+
+// Redraw the shiny windows on top of the active Plan9 window that we're
+// attached to
+func redrawWindow(s *screenImpl, r image.Rectangle) {
+	args := make([]byte, 44)
+
+	// 0, 0, 0, 1 is the attached window that we're drawing on.
+	args[3] = 1
+
+	// the rectangle, at the right location in the slice.
+	binary.LittleEndian.PutUint32(args[12:], uint32(r.Min.X))
+	binary.LittleEndian.PutUint32(args[16:], uint32(r.Min.Y))
+	binary.LittleEndian.PutUint32(args[20:], uint32(r.Max.X))
+	binary.LittleEndian.PutUint32(args[24:], uint32(r.Max.Y))
+	// source point and mask point are both always 0.
+	for _, winId := range s.windows {
+		// redraw each window id
+		binary.LittleEndian.PutUint32(args[4:], uint32(winId))
+		// use the window itself as a mask, so that it's opaque.
+		// (or at least uses it's own alpha channel)
+		binary.LittleEndian.PutUint32(args[8:], uint32(winId))
+		s.ctl.sendMessage('d', args)
+	}
+}
+
+
 func attachscreen() []byte {
 	winname, err := ioutil.ReadFile("/dev/winname")
 	if err != nil {
@@ -148,19 +125,4 @@ func attachscreen() []byte {
 	buf[4] = byte(len(winname))
 	copy(buf[5:], winname)
 	return buf
-}
-
-// Helper functions to convert to little endian.
-// based on bplong/bpshort, but returns a byte buffer
-// instead of populating one.
-func lelong(n uint32) []byte {
-	b := make([]byte, 4)
-	binary.LittleEndian.PutUint32(b, n)
-	return b
-}
-
-func leshort(n uint16) []byte {
-	b := make([]byte, 4)
-	binary.LittleEndian.PutUint16(b, n)
-	return b
 }

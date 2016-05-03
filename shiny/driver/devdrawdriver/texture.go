@@ -4,18 +4,12 @@
 package devdrawdriver
 
 import (
-	"errors"
-	"fmt"
 	"golang.org/x/exp/shiny/screen"
 	"image"
 	"image/color"
 	"image/draw"
 )
 
-var (
-	bufferUnderRead = errors.New("Did not read enough data from reader.")
-	invalidData     = errors.New("Unexpected data read from reader.")
-)
 
 type textureImpl struct {
 	// use s.n to get the connection id to use in /dev/draw/n/
@@ -25,24 +19,26 @@ type textureImpl struct {
 }
 
 func (t *textureImpl) Bounds() image.Rectangle {
-	return t.buffer.Bounds()
+	if t.buffer != nil {
+		return t.buffer.Bounds()
+	}
+	return image.ZR
 }
 func (t *textureImpl) Size() image.Point {
-	return t.buffer.Size()
+	if t.buffer != nil {
+		return t.buffer.Size()
+	}
+	return image.ZP
 }
 func (t *textureImpl) Release() {
-	fmt.Printf("%s\n", t)
 	if t == nil {
 		return
 	}
 	// BUG: this should write a free message to /dev/draw/n/ctl
 	// f -> textureId
-	t.buffer.Release()
-	/*
-		if t.newReader != nil {
-			t.newReader.Close()
-		}
-	*/
+	if t.buffer != nil {
+		t.buffer.Release()
+	}
 }
 
 func (t *textureImpl) Upload(dp image.Point, src screen.Buffer, sr image.Rectangle) {

@@ -5,10 +5,12 @@
 package devdrawdriver
 
 import (
-	"fmt"
+	//"os"
+	//"image/jpeg"
+	//"fmt"
 	//	"encoding/binary"
-	"golang.org/x/exp/shiny/driver/internal/event"
 	"golang.org/x/exp/shiny/driver/internal/drawer"
+	"golang.org/x/exp/shiny/driver/internal/event"
 	"golang.org/x/exp/shiny/screen"
 	"golang.org/x/image/math/f64"
 	"golang.org/x/mobile/event/paint"
@@ -28,7 +30,6 @@ type windowImpl struct {
 }
 
 func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectangle, op draw.Op, opts *screen.DrawOptions) {
-	return
 	// There's no direct way to do an affine transformation in /dev/draw,
 	// so this does the following steps:
 	//
@@ -38,11 +39,83 @@ func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectang
 	// 4. Upload the transformed data to the new ImageId
 	// 3. SetOp
 	// 4. Draw.
+
+	// step 1: read the subimage data
 	t := src.(*textureImpl)
 	pixels := w.s.ctl.ReadSubimage(uint32(t.textureId), sr)
-	fmt.Printf("Data: %x\n", pixels)
-//func (d *DrawCtrler) ReadSubimage(src uint32, r image.Rectangle) []uint8 {
-	//panic("Done drawing")
+	// convert it to an image.RGBA to make life easier.
+	srcImage := image.NewRGBA(sr)
+	srcImage.Pix = pixels
+
+	// step 2: transform it into dst space
+	// 2a. Calculate the size of the translated buffer by multiplying
+	// the transformation through on sr.Min and sr.Max
+
+	// helper function to do the calculations of src2dst..
+	mapPoint := func(p image.Point) image.Point {
+		xf, yf := float64(p.X), float64(p.Y)
+		return image.Point{
+			X: int(xf*src2dst[0] + yf*src2dst[1] + src2dst[2]),
+			Y: int(xf*src2dst[3] + yf*src2dst[4] + src2dst[5]),
+		}
+	}
+	// map the top left corner, and assume it's both the min and the max
+	topLeft := mapPoint(sr.Min)
+	min, max := topLeft, topLeft
+	updateMinMax := func(p image.Point) {
+		if p.X < min.X {
+			min.X = p.X
+		}
+		if p.Y < min.Y {
+			min.Y = p.Y
+		}
+		if p.X > max.X {
+			max.X = p.X
+		}
+		if p.Y > max.Y {
+			max.Y = p.Y
+		}
+	}
+	// map the top right corner, and change the min or max as necessary
+	p := mapPoint(image.Point{sr.Max.X, sr.Min.Y})
+	updateMinMax(p)
+	// bottom left
+	p = mapPoint(image.Point{sr.Min.X, sr.Max.Y})
+	updateMinMax(p)
+	// bottom right
+	p = mapPoint(image.Point{sr.Max.X, sr.Max.Y})
+	updateMinMax(p)
+
+	newRectangle := image.Rectangle{min, max}
+	//fmt.Printf("New Rectangle: %s\n", newRectangle)
+	// 2b. Do the transformation itself. Create a new RGBA image to
+	// use temporarily to make this easier.
+	transformedImage := image.NewRGBA(newRectangle)
+	for x := sr.Min.X; x < sr.Max.X; x++ {
+		for y := sr.Min.Y; y < sr.Max.Y; y++ {
+			newPoint := mapPoint(image.Point{x, y})
+			transformedImage.Set(
+				newPoint.X,
+				newPoint.Y,
+				srcImage.At(x, y),
+			)
+		}
+	}
+
+	// 3. Create a new imageId of the transformed texture
+	newOriginRectangle := image.Rectangle{image.ZP, newRectangle.Size()}
+	imageId := w.s.ctl.AllocBuffer(0, false, newOriginRectangle, newOriginRectangle, color.RGBA{0, 0, 0, 0})
+
+	// 4. Upload the transformed data to the new ImageId
+	w.s.ctl.ReplaceSubimage(imageId, newOriginRectangle, transformedImage.Pix)
+	// 3. SetOp
+	w.s.ctl.SetOp(op)
+	// 4. Draw.
+	w.s.ctl.Draw(uint32(w.winImageId), imageId, imageId, newRectangle, image.ZP, image.ZP)
+	w.s.ctl.FreeID(imageId)
+	/*fmt.Printf("Data: %x\n", transformedImage.Pix)
+	panic("Done drawing")
+	*/
 
 }
 
@@ -55,6 +128,8 @@ func (w *windowImpl) Scale(dr image.Rectangle, src screen.Texture, sr image.Rect
 }
 
 func (w *windowImpl) Publish() screen.PublishResult {
+	repositionWindow(w.s, w.s.windowFrame)
+	redrawWindow(w.s, w.s.windowFrame)
 	return screen.PublishResult{false}
 }
 

@@ -33,4 +33,3 @@ func readWctl() (image.Rectangle, error) {
 		Max: image.Point{strToInt(sizes[2]), strToInt(sizes[3])},
 	}, nil
 }
-

@@ -12,11 +12,11 @@ type textureId uint32
 
 type textureImpl struct {
 	uploadImpl
-	size image.Point
+	size      image.Point
 	textureId textureId
 	/*
-	s         *screen.Screen
-	buffer    *bufferImpl
+		s         *screen.Screen
+		buffer    *bufferImpl
 	*/
 }
 
@@ -33,11 +33,11 @@ func (t *textureImpl) Size() image.Point {
 	return t.size
 }
 func newTextureImpl(s *screenImpl, size image.Point) *textureImpl {
-	uploader := newUploadImpl(s, image.Rectangle{image.ZP, size}, color.RGBA{0,0,0,0})
+	uploader := newUploadImpl(s, image.Rectangle{image.ZP, size}, color.RGBA{0, 0, 0, 0})
 	t := &textureImpl{
 		uploadImpl: uploader,
-		size: size,
-		textureId: textureId(uploader.imageId),
+		size:       size,
+		textureId:  textureId(uploader.imageId),
 	}
 	return t
 }

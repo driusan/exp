@@ -57,11 +57,5 @@ func Main(f func(s screen.Screen)) {
 
 		// redraw the window after every event. This is mostly because otherwise the text printed via the
 		// test program overwrites the image, since it's in the same window on Plan9..
-		/*
-			if lastWindowEvent != nil {
-			}
-		*/
-		repositionWindow(s, s.windowFrame)
-		redrawWindow(s, s.windowFrame)
 	}
 }

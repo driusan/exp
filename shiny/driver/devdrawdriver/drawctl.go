@@ -221,7 +221,8 @@ func (d *DrawCtrler) ReplaceSubimage(dstid uint32, r image.Rectangle, pixels []b
 	// to /dev/draw/n/data can handle. So as a hack, send one
 	// line at a time if it's too big..
 	// TODO: This should try the LZ77 compressed 'Y' form of 'y' before
-	// falling back on one line at a time.
+	// falling back on one line at a time. Need to test if compress/flate
+	// will work.
 	rSize := r.Size()
 	if (rSize.X*rSize.Y*4 + 21) < 65536 {
 		msg := make([]byte, 20+(rSize.X*rSize.Y*4))
@@ -233,21 +234,73 @@ func (d *DrawCtrler) ReplaceSubimage(dstid uint32, r image.Rectangle, pixels []b
 
 		copy(msg[20:], pixels)
 		d.sendMessage('y', msg)
-	} else {
-		// TODO: This should calculate the maximum number of lines
-		// that can fit in one message and send a rectangle of that
-		// size, instead of 1 line at a time.
-		msg := make([]byte, 20+(rSize.X*4))
-		binary.LittleEndian.PutUint32(msg[0:], dstid)
+		return
+	}
+	// TODO: This should calculate the maximum number of lines
+	// that can fit in one message and send a rectangle of that
+	// size, instead of 1 line at a time.
+	msg := make([]byte, 20+(rSize.X*4))
+	binary.LittleEndian.PutUint32(msg[0:], dstid)
+	binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
+	binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
+	for i := 0; i < r.Max.Y; i++ {
+		binary.LittleEndian.PutUint32(msg[8:], uint32(r.Min.Y+i))
+		binary.LittleEndian.PutUint32(msg[16:], uint32(r.Min.Y+i+1))
+		copy(msg[20:], pixels[i*rSize.X*4:])
+		d.sendMessage('y', msg)
+	}
+}
+
+// ReadSubimage returns the pixel data of the rectangle r from the
+// image identified by imageID src
+//
+// It sends /dev/draw/n/data the message:
+//	r id[4] r[4*4]
+//
+// and then reads the data from /dev/draw/n/data.
+func (d *DrawCtrler) ReadSubimage(src uint32, r image.Rectangle) []uint8 {
+	rSize := r.Size()
+	msg := make([]byte, 20)
+	pixels := make([]byte, (rSize.X * rSize.Y * 4))
+	if (rSize.X * rSize.Y * 3) < 65536 {
+		binary.LittleEndian.PutUint32(msg[0:], src)
 		binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
+		binary.LittleEndian.PutUint32(msg[8:], uint32(r.Min.Y))
 		binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
-		for i := 0; i < r.Max.Y; i += 1 {
-			binary.LittleEndian.PutUint32(msg[8:], uint32(r.Min.Y+i))
-			binary.LittleEndian.PutUint32(msg[16:], uint32(r.Min.Y+i+1))
-			copy(msg[20:], pixels[i*rSize.X*4:])
-			d.sendMessage('y', msg)
+		binary.LittleEndian.PutUint32(msg[16:], uint32(r.Max.Y))
+
+		d.sendMessage('r', msg)
+
+		_, err := d.data.Read(pixels)
+		if err != nil {
+			panic(err)
+		}
+		return pixels
+	}
+	// The read won't fit in a single read to /dev/draw/n/data, so
+	// do it one line at a time... need to figure out if this
+	// limitation comes from Plan9, drawterm, or Go, but if
+	// the rectangle is too big, reading from it turns up an
+	// Eshortread error and reads 0 bytes.
+
+	// TODO: This should calculate the maximum number of lines
+	// that can fit in one message and send a rectangle of that
+	// size, instead of 1 line at a time.
+	binary.LittleEndian.PutUint32(msg[0:], src)
+	binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
+	binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
+	for i := r.Min.Y; i < r.Max.Y; i += 1 {
+		binary.LittleEndian.PutUint32(msg[8:], uint32(i))
+		binary.LittleEndian.PutUint32(msg[16:], uint32(i+1))
+		pixelsOffset := (i - r.Min.Y) * rSize.X * 4
+		d.sendMessage('r', msg)
+		_, err := d.data.Read(pixels[pixelsOffset:])
+		//copy(msg[20:], pixels[i*rSize.X*4:])
+		if err != nil {
+			panic(err)
 		}
 	}
+	return pixels
 }
 
 // parseCtlString parses the output of the format returned by /dev/draw/new.

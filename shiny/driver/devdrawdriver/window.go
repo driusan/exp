@@ -31,6 +31,17 @@ func (w *windowImpl) Release() {
 }
 
 func (w *windowImpl) Upload(dp image.Point, src screen.Buffer, sr image.Rectangle) {
+	img := src.RGBA()
+	if img == nil {
+		return
+	}
+	var subimage *image.RGBA = (img.SubImage(sr)).(*image.RGBA)
+
+	dr := image.Rectangle{
+		Min: dp,
+		Max: dp.Add(sr.Size()),
+	}
+	w.s.ctl.ReplaceSubimage(uint32(w.winImageId), dr, subimage.Pix)
 }
 
 func (w *windowImpl) Fill(dr image.Rectangle, src color.Color, op draw.Op) {
@@ -40,7 +51,8 @@ func (w *windowImpl) Fill(dr image.Rectangle, src color.Color, op draw.Op) {
 	w.resources = append(w.resources, fillID)
 
 	w.s.ctl.SetOp(op)
-	w.s.ctl.Draw(uint32(w.winImageId), fillID, uint32(w.winImageId), dr, image.ZP, image.ZP)
+	//w.s.ctl.Draw(uint32(w.winImageId), fillID, uint32(w.winImageId), dr, image.ZP, image.ZP)
+	w.s.ctl.Draw(uint32(w.winImageId), fillID, fillID, dr, image.ZP, image.ZP)
 }
 
 func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectangle, op draw.Op, opts *screen.DrawOptions) {
@@ -57,7 +69,7 @@ func (w *windowImpl) Publish() screen.PublishResult {
 }
 
 func newWindowImpl(s *screenImpl) *windowImpl {
-	// now allocate a /dev/draw image to represent our window. 
+	// now allocate a /dev/draw image to represent our window.
 	// It has the same size as the current Plan 9 image, but in it's
 	// internal coordinate system the origin is 0, 0
 	// default to a black background for testing.
@@ -66,13 +78,14 @@ func newWindowImpl(s *screenImpl) *windowImpl {
 
 	// white background, go back to this before sending a patch, because
 	// it's more plan-9-y..
-//	winId := s.ctl.AllocBuffer(0, false, image.Rectangle{image.ZP, s.windowFrame.Size()}, color.RGBA{255, 255, 255, 255})
+	//	winId := s.ctl.AllocBuffer(0, false, image.Rectangle{image.ZP, s.windowFrame.Size()}, color.RGBA{255, 255, 255, 255})
 	w := &windowImpl{
 		s:          s,
 		winImageId: windowId(winId),
-		resources: make([]uint32, 0),
+		resources:  make([]uint32, 0),
 	}
 	w.Queue.Send(size.Event{WidthPx: r.Max.X, HeightPx: r.Max.Y})
 	w.Queue.Send(paint.Event{})
+	redrawWindow(s, s.windowFrame)
 	return w
 }

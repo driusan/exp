@@ -10,7 +10,6 @@ import (
 	"image/draw"
 )
 
-
 type textureImpl struct {
 	// use s.n to get the connection id to use in /dev/draw/n/
 	s         *screen.Screen

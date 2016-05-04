@@ -129,11 +129,12 @@ func (d *DrawCtrler) AllocBuffer(refresh byte, repl bool, r, clipr image.Rectang
 	binary.LittleEndian.PutUint32(msg[0:], newId)
 	// refresh can just be passed along directly.
 	msg[8] = refresh
-	// RGBA channel. This is equivalent to r8g8b8a8
-	msg[9] = 40
-	msg[10] = 24
-	msg[11] = 8
-	msg[12] = 72
+	// RGBA channel. This is the same format as image.RGBA.Pix,
+	// so that we can directly upload it.
+	msg[9] = 8   // r8
+	msg[10] = 24 // g8
+	msg[11] = 40 // b8
+	msg[12] = 72 // a8
 	// Convert repl from bool to a byte
 	if repl == true {
 		msg[13] = 1
@@ -150,6 +151,9 @@ func (d *DrawCtrler) AllocBuffer(refresh byte, repl bool, r, clipr image.Rectang
 	binary.LittleEndian.PutUint32(msg[38:], uint32(clipr.Max.X))
 	binary.LittleEndian.PutUint32(msg[42:], uint32(clipr.Max.Y))
 	// RGBA colour to use by default for this buffer.
+	// color.RGBA() returns a uint16 (actually a uint32
+	// with only the lower 16 bits set), so shift it to
+	// convert it to a uint8.
 	rd, g, b, a := color.RGBA()
 	msg[46] = byte(a >> 8)
 	msg[47] = byte(b >> 8)
@@ -211,6 +215,45 @@ func (d *DrawCtrler) Draw(dstid, srcid, maskid uint32, r image.Rectangle, srcp, 
 	binary.LittleEndian.PutUint32(msg[36:], uint32(maskp.X))
 	binary.LittleEndian.PutUint32(msg[40:], uint32(maskp.Y))
 	d.sendMessage('d', msg)
+}
+
+// ReplaceSubimage replaces the rectangle r with the pixel buffer
+// defined by pixels.
+//
+// It sends /dev/draw/n/data the message:
+//	y id[4] r[4*4] buf[x*1]
+func (d *DrawCtrler) ReplaceSubimage(dstid uint32, r image.Rectangle, pixels []byte) {
+	// There seems to be an implicit limit of 65536 bytes that writing
+	// to /dev/draw/n/data can handle. So as a hack, send one
+	// line at a time if it's too big..
+	// TODO: This should try the LZ77 compressed 'Y' form of 'y' before
+	// falling back on one line at a time.
+	rSize := r.Size()
+	if (rSize.X*rSize.Y*4 + 21) < 65536 {
+		msg := make([]byte, 20+(rSize.X*rSize.Y*4))
+		binary.LittleEndian.PutUint32(msg[0:], dstid)
+		binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
+		binary.LittleEndian.PutUint32(msg[8:], uint32(r.Min.Y))
+		binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
+		binary.LittleEndian.PutUint32(msg[16:], uint32(r.Max.Y))
+
+		copy(msg[20:], pixels)
+		d.sendMessage('y', msg)
+	} else {
+		// TODO: This should calculate the maximum number of lines
+		// that can fit in one message and send a rectangle of that
+		// size, instead of 1 line at a time.
+		msg := make([]byte, 20+(rSize.X*4))
+		binary.LittleEndian.PutUint32(msg[0:], dstid)
+		binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
+		binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
+		for i := 0; i < r.Max.Y; i += 1 {
+			binary.LittleEndian.PutUint32(msg[8:], uint32(r.Min.Y+i))
+			binary.LittleEndian.PutUint32(msg[16:], uint32(r.Min.Y+i+1))
+			copy(msg[20:], pixels[i*rSize.X*4:])
+			d.sendMessage('y', msg)
+		}
+	}
 }
 
 // parseCtlString parses the output of the format returned by /dev/draw/new.

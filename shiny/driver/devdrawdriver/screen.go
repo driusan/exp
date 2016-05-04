@@ -16,7 +16,7 @@ import (
 type windowId uint32
 type screenImpl struct {
 	// the active shiny window
-	w   *windowImpl
+	w *windowImpl
 
 	// the reference to /dev/draw/N/data to send
 	// messages to
@@ -27,7 +27,7 @@ type screenImpl struct {
 	windowFrame image.Rectangle
 
 	// list of existing window IDs that have been allocated
-	windows          []windowId
+	windows []windowId
 }
 
 func (s *screenImpl) NewBuffer(size image.Point) (retBuf screen.Buffer, retErr error) {
@@ -63,8 +63,8 @@ func newScreenImpl() *screenImpl {
 	}
 
 	s := &screenImpl{
-		ctl:        ctrl,
-		windows:    make([]windowId, 0),
+		ctl:     ctrl,
+		windows: make([]windowId, 0),
 	}
 	return s
 }
@@ -113,7 +113,6 @@ func redrawWindow(s *screenImpl, r image.Rectangle) {
 		s.ctl.sendMessage('d', args)
 	}
 }
-
 
 func attachscreen() []byte {
 	winname, err := ioutil.ReadFile("/dev/winname")

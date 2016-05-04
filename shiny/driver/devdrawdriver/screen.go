@@ -13,7 +13,6 @@ import (
 	"io/ioutil"
 )
 
-type windowId uint32
 type screenImpl struct {
 	// the active shiny window
 	w *windowImpl
@@ -37,7 +36,7 @@ func (s *screenImpl) NewBuffer(size image.Point) (retBuf screen.Buffer, retErr e
 }
 
 func (s *screenImpl) NewTexture(size image.Point) (screen.Texture, error) {
-	return newTextureImpl(s), nil
+	return newTextureImpl(s, size), nil
 }
 
 func (s *screenImpl) NewWindow(opts *screen.NewWindowOptions) (screen.Window, error) {

@@ -95,6 +95,9 @@ func (d DrawCtrler) readCtlString(f io.Reader) string {
 func (d DrawCtrler) sendMessage(cmd byte, val []byte) error {
 	realCmd := append([]byte{cmd}, val...)
 	_, err := d.data.Write(realCmd)
+	if err != nil {
+		panic(err)
+	}
 	return err
 }
 

@@ -7,6 +7,7 @@ package devdrawdriver
 import (
 	//	"encoding/binary"
 	"golang.org/x/exp/shiny/driver/internal/event"
+	"golang.org/x/exp/shiny/driver/internal/drawer"
 	"golang.org/x/exp/shiny/screen"
 	"golang.org/x/image/math/f64"
 	"golang.org/x/mobile/event/paint"
@@ -16,6 +17,8 @@ import (
 	"image/draw"
 )
 
+type windowId uint32
+
 type windowImpl struct {
 	uploadImpl
 	s *screenImpl
@@ -24,12 +27,18 @@ type windowImpl struct {
 }
 
 func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectangle, op draw.Op, opts *screen.DrawOptions) {
+	// 1. read sr from texture.
+	// 2. Transform using src2dst
+	// 3. SetOp
+	// 4. Draw.
 }
 
 func (w *windowImpl) Copy(dp image.Point, src screen.Texture, sr image.Rectangle, op draw.Op, opts *screen.DrawOptions) {
+	drawer.Copy(w, dp, src, sr, op, opts)
 }
 
 func (w *windowImpl) Scale(dr image.Rectangle, src screen.Texture, sr image.Rectangle, op draw.Op, opts *screen.DrawOptions) {
+	drawer.Scale(w, dr, src, sr, op, opts)
 }
 
 func (w *windowImpl) Publish() screen.PublishResult {

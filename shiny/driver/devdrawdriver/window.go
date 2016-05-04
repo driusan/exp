@@ -12,6 +12,7 @@ import (
 	"golang.org/x/exp/shiny/driver/internal/drawer"
 	"golang.org/x/exp/shiny/driver/internal/event"
 	"golang.org/x/exp/shiny/screen"
+	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/math/f64"
 	"golang.org/x/mobile/event/paint"
 	"golang.org/x/mobile/event/size"
@@ -91,16 +92,7 @@ func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectang
 	// 2b. Do the transformation itself. Create a new RGBA image to
 	// use temporarily to make this easier.
 	transformedImage := image.NewRGBA(newRectangle)
-	for x := sr.Min.X; x < sr.Max.X; x++ {
-		for y := sr.Min.Y; y < sr.Max.Y; y++ {
-			newPoint := mapPoint(image.Point{x, y})
-			transformedImage.Set(
-				newPoint.X,
-				newPoint.Y,
-				srcImage.At(x, y),
-			)
-		}
-	}
+	xdraw.NearestNeighbor.Transform(transformedImage, src2dst, srcImage, sr, xdraw.Op(op), nil)
 
 	// 3. Create a new imageId of the transformed texture
 	newOriginRectangle := image.Rectangle{image.ZP, newRectangle.Size()}
@@ -112,10 +104,8 @@ func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectang
 	w.s.ctl.SetOp(op)
 	// 4. Draw.
 	w.s.ctl.Draw(uint32(w.winImageId), imageId, imageId, newRectangle, image.ZP, image.ZP)
+	// the image is already used, so we might as well free it.
 	w.s.ctl.FreeID(imageId)
-	/*fmt.Printf("Data: %x\n", transformedImage.Pix)
-	panic("Done drawing")
-	*/
 
 }
 

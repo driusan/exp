@@ -90,8 +90,6 @@ func (d DrawCtrler) readCtlString(f io.Reader) string {
 // sendMessage sends the command represented by cmd to the data channel,
 // with the raw arguments in val (n.b. They need to be in little endian
 // byte order and match the cmd arguments described in draw(3)
-// TODO: Write better wrappers around this that handle endian conversions
-//       and common arguments.
 func (d DrawCtrler) sendMessage(cmd byte, val []byte) error {
 	realCmd := append([]byte{cmd}, val...)
 	_, err := d.data.Write(realCmd)
@@ -106,13 +104,6 @@ func (d DrawCtrler) sendMessage(cmd byte, val []byte) error {
 func (d DrawCtrler) sendCtlMessage(val []byte) error {
 	_, err := d.ctl.Write(val)
 	return err
-}
-
-func (d DrawCtrler) refresh(val []byte) {
-	d.sendCtlMessage(val)
-	filename := fmt.Sprintf("/dev/draw/%d/refresh", d.N)
-	f, _ := os.Open(filename)
-	defer f.Close()
 }
 
 // AllocBuffer will send a message to /dev/draw/N/data of the form:

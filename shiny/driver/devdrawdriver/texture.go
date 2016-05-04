@@ -8,13 +8,15 @@ import (
 	"image/color"
 )
 
+type textureId uint32
+
 type textureImpl struct {
 	uploadImpl
 	size image.Point
+	textureId textureId
 	/*
 	s         *screen.Screen
 	buffer    *bufferImpl
-	textureId int
 	*/
 }
 
@@ -35,8 +37,7 @@ func newTextureImpl(s *screenImpl, size image.Point) *textureImpl {
 	t := &textureImpl{
 		uploadImpl: uploader,
 		size: size,
+		textureId: textureId(uploader.imageId),
 	}
-
-	// TODO:allocate a new buffer
 	return t
 }

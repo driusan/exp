@@ -5,54 +5,22 @@
 package devdrawdriver
 
 import (
+	//	"encoding/binary"
 	"golang.org/x/exp/shiny/driver/internal/event"
 	"golang.org/x/exp/shiny/screen"
 	"golang.org/x/image/math/f64"
+	"golang.org/x/mobile/event/paint"
+	"golang.org/x/mobile/event/size"
 	"image"
 	"image/color"
 	"image/draw"
-	"golang.org/x/mobile/event/size"
-	"golang.org/x/mobile/event/paint"
 )
 
 type windowImpl struct {
+	uploadImpl
 	s *screenImpl
 	event.Queue
 	winImageId windowId
-	position   image.Rectangle
-	resources []uint32
-}
-
-func (w *windowImpl) Release() {
-	for _, id := range w.resources {
-		w.s.ctl.FreeID(id)
-	}
-	w.s.ctl.FreeID(uint32(w.winImageId))
-}
-
-func (w *windowImpl) Upload(dp image.Point, src screen.Buffer, sr image.Rectangle) {
-	img := src.RGBA()
-	if img == nil {
-		return
-	}
-	var subimage *image.RGBA = (img.SubImage(sr)).(*image.RGBA)
-
-	dr := image.Rectangle{
-		Min: dp,
-		Max: dp.Add(sr.Size()),
-	}
-	w.s.ctl.ReplaceSubimage(uint32(w.winImageId), dr, subimage.Pix)
-}
-
-func (w *windowImpl) Fill(dr image.Rectangle, src color.Color, op draw.Op) {
-
-	rect := image.Rectangle{image.ZP, dr.Size()}
-	fillID := w.s.ctl.AllocBuffer(0, true, rect, rect, src)
-	w.resources = append(w.resources, fillID)
-
-	w.s.ctl.SetOp(op)
-	//w.s.ctl.Draw(uint32(w.winImageId), fillID, uint32(w.winImageId), dr, image.ZP, image.ZP)
-	w.s.ctl.Draw(uint32(w.winImageId), fillID, fillID, dr, image.ZP, image.ZP)
 }
 
 func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectangle, op draw.Op, opts *screen.DrawOptions) {
@@ -74,15 +42,15 @@ func newWindowImpl(s *screenImpl) *windowImpl {
 	// internal coordinate system the origin is 0, 0
 	// default to a black background for testing.
 	r := image.Rectangle{image.ZP, s.windowFrame.Size()}
-	winId := s.ctl.AllocBuffer(0, false, r, r, color.RGBA{0, 0, 0, 255})
 
 	// white background, go back to this before sending a patch, because
 	// it's more plan-9-y..
 	//	winId := s.ctl.AllocBuffer(0, false, image.Rectangle{image.ZP, s.windowFrame.Size()}, color.RGBA{255, 255, 255, 255})
+	uploader := newUploadImpl(s, r, color.RGBA{0, 0, 0, 255})
 	w := &windowImpl{
+		uploadImpl: uploader,
 		s:          s,
-		winImageId: windowId(winId),
-		resources:  make([]uint32, 0),
+		winImageId: windowId(uploader.imageId),
 	}
 	w.Queue.Send(size.Event{WidthPx: r.Max.X, HeightPx: r.Max.Y})
 	w.Queue.Send(paint.Event{})

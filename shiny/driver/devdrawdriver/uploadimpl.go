@@ -12,7 +12,7 @@ import (
 )
 
 type uploadImpl struct {
-	ctl       DrawCtrler
+	ctl       *DrawCtrler
 	imageId   uint32
 	resources []uint32
 }
@@ -56,7 +56,7 @@ func newUploadImpl(s *screenImpl, size image.Rectangle, c color.Color) uploadImp
 	imageId := s.ctl.AllocBuffer(0, false, size, size, c)
 
 	return uploadImpl{
-		ctl:       *s.ctl,
+		ctl:       s.ctl,
 		imageId:   imageId,
 		resources: make([]uint32, 0),
 	}

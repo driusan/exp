@@ -13,9 +13,9 @@ import (
 
 var currentModifiers key.Modifiers
 
-// keyboardEventHandler writes rawon to /dev/consctl, and then continuously reads
-// runes from /dev/cons and converts them to key.Event messages, which it passes
-// along the notifier channel.
+// keyboardEventHandler writes rawon to /dev/consctl, and then continuously
+// reads runes from /dev/cons and converts them to key.Event messages, which
+// it passes // along the notifier channel.
 func keyboardEventHandler(notifier chan *key.Event) {
 	ctl, err := os.OpenFile("/dev/consctl", os.O_WRONLY, 0644)
 	if err != nil {
@@ -60,16 +60,15 @@ func keyboardEventHandler(notifier chan *key.Event) {
 	}
 }
 
-// RuneToCode takes a unicode rune that came off of /dev/cons, and converts
-// it back to the keycode (and modifiers) that would have been used to
-// create that codepoint.
+// RuneToCode takes a unicode rune that came off of /dev/cons, and guessed
+// as which keycode generated that rune.
 //
 // BUG: This only supports ASCII right now, and only supports the shift
 //      modifier. Adding ctrl should be just a matter of looking up
 //	the unicode range for the ctrl-modified runes, and alt isn't possible
 //	because Plan 9 doesn't pass that along /dev/cons (it's used at a lower
 //	level to compose unicode codepoints that get passed to /dev/cons)
-// TODO: Look into using /dev/kbmap instead.
+// TODO: Look into using /dev/kbd on 9front.
 func RuneToCode(r rune) (key.Code, key.Modifiers) {
 	// first handle ones that can easily be calculated from the
 	// ASCII ordering.

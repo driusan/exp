@@ -50,7 +50,7 @@ func newScreenImpl() *screenImpl {
 	ctrl, msg := NewDrawCtrler(0)
 	fmt.Printf("%s, %s\n", ctrl, msg)
 	if ctrl != nil {
-		// makes ID 0x0001 refer to the same image as /dev/winname on this process. I think?
+		// makes ID 0x0001 refer to the same image as /dev/winname on this process.
 		ctrl.sendMessage('n', attachscreen())
 
 		// create a new screen for us to use
@@ -97,7 +97,7 @@ func redrawWindow(s *screenImpl, r image.Rectangle) {
 	// 0, 0, 0, 1 is the attached window that we're drawing on.
 	args[3] = 1
 
-	// the rectangle, at the right location in the slice.
+	// the rectangle clipping rectangle
 	binary.LittleEndian.PutUint32(args[12:], uint32(r.Min.X))
 	binary.LittleEndian.PutUint32(args[16:], uint32(r.Min.Y))
 	binary.LittleEndian.PutUint32(args[20:], uint32(r.Max.X))

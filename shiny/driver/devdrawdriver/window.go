@@ -5,10 +5,6 @@
 package devdrawdriver
 
 import (
-	//"os"
-	//"image/jpeg"
-	//"fmt"
-	//	"encoding/binary"
 	"golang.org/x/exp/shiny/driver/internal/drawer"
 	"golang.org/x/exp/shiny/driver/internal/event"
 	"golang.org/x/exp/shiny/screen"
@@ -124,22 +120,21 @@ func (w *windowImpl) Publish() screen.PublishResult {
 }
 
 func newWindowImpl(s *screenImpl) *windowImpl {
-	// now allocate a /dev/draw image to represent our window.
+	// Allocate a /dev/draw image to represent our window.
 	// It has the same size as the current Plan 9 image, but in it's
 	// internal coordinate system the origin is 0, 0
 	// default to a black background for testing.
 	r := image.Rectangle{image.ZP, s.windowFrame.Size()}
 
-	// white background, go back to this before sending a patch, because
-	// it's more plan-9-y..
-	//	winId := s.ctl.AllocBuffer(0, false, image.Rectangle{image.ZP, s.windowFrame.Size()}, color.RGBA{255, 255, 255, 255})
 	uploader := newUploadImpl(s, r, color.RGBA{0, 0, 0, 255})
 	w := &windowImpl{
 		uploadImpl: uploader,
 		s:          s,
 		winImageId: windowId(uploader.imageId),
 	}
+	// tell the window it's current size before doing anything.
 	w.Queue.Send(size.Event{WidthPx: r.Max.X, HeightPx: r.Max.Y})
+	// and after it knows the size, tell it to paint.
 	w.Queue.Send(paint.Event{})
 	redrawWindow(s, s.windowFrame)
 	return w

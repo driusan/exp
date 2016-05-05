@@ -11,9 +11,16 @@ import (
 	"image/draw"
 )
 
+// uploadImpl implements the upload interface over /dev/draw
+// and can be composed into anything that implements it for
+// an image (notably windowImpl and textureImpl)
 type uploadImpl struct {
-	ctl       *DrawCtrler
-	imageId   uint32
+	// writer to /dev/draw/n/data
+	ctl *DrawCtrler
+	// the imageId that represents this image in /dev/draw.
+	imageId uint32
+	// resources that were allocated which need to be
+	// freed upon release.
 	resources []uint32
 }
 
@@ -29,8 +36,10 @@ func (u *uploadImpl) Upload(dp image.Point, src screen.Buffer, sr image.Rectangl
 	if img == nil {
 		return
 	}
+	// get an image.RGBA referencing sr of Buffer.
 	var subimage *image.RGBA = (img.SubImage(sr)).(*image.RGBA)
 
+	// then replace the appropriate rectangle in this image.
 	dr := image.Rectangle{
 		Min: dp,
 		Max: dp.Add(sr.Size()),
@@ -39,20 +48,19 @@ func (u *uploadImpl) Upload(dp image.Point, src screen.Buffer, sr image.Rectangl
 }
 
 func (u *uploadImpl) Fill(dr image.Rectangle, src color.Color, op draw.Op) {
-
+	// create a new buffer with the appropriate colour and the appropriate
+	// size.
 	rect := image.Rectangle{image.ZP, dr.Size()}
 	fillID := u.ctl.AllocBuffer(0, true, rect, rect, src)
 	u.resources = append(u.resources, fillID)
 
+	// then draw it on top of this image.
 	u.ctl.SetOp(op)
 	u.ctl.Draw(uint32(u.imageId), fillID, fillID, dr, image.ZP, image.ZP)
 }
 
 func newUploadImpl(s *screenImpl, size image.Rectangle, c color.Color) uploadImpl {
-	// now allocate a /dev/draw image to represent our window.
-	// It has the same size as the current Plan 9 image, but in it's
-	// internal coordinate system the origin is 0, 0
-	// default to a black background for testing.
+	// allocate a /dev/draw image id to represent this image.
 	imageId := s.ctl.AllocBuffer(0, false, size, size, c)
 
 	return uploadImpl{

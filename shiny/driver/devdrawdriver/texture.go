@@ -14,10 +14,6 @@ type textureImpl struct {
 	uploadImpl
 	size      image.Point
 	textureId textureId
-	/*
-		s         *screen.Screen
-		buffer    *bufferImpl
-	*/
 }
 
 func (t *textureImpl) Bounds() image.Rectangle {

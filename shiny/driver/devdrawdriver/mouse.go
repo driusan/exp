@@ -31,6 +31,7 @@ const (
 // reads from /dev/mouse and converts them to mouse.Event messages which
 // are passed along the notifier channel to be added to the shiny event
 // queue.
+// BUG: This doesn't handle the 'r' message type yet.
 func mouseEventHandler(notifier chan *mouse.Event) {
 	mouseEvent, err := os.Open("/dev/mouse")
 	if err != nil {
@@ -40,6 +41,7 @@ func mouseEventHandler(notifier chan *mouse.Event) {
 	defer mouseEvent.Close()
 
 	mouseMessage := make([]byte, 100)
+	// used to determine if it's an up or a down direction
 	var previousEvent mouse.Event
 	for {
 		_, err := mouseEvent.Read(mouseMessage)

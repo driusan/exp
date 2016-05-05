@@ -12,13 +12,21 @@ import (
 	"strings"
 )
 
+// A DrawCtrler is an object which holds references to
+// /dev/draw/n/data and ctl, and allows you to send or
+// receive messages from it.
 type DrawCtrler struct {
-	N      int
-	ctl    io.ReadWriteCloser
-	data   io.ReadWriteCloser
+	N    int
+	ctl  io.ReadWriteCloser
+	data io.ReadWriteCloser
+
+	// the next available ID to use when allocating
+	// an image
 	nextId uint32
 }
 
+// A DrawCtlMsg represents the data that is returned from
+// opening /dev/draw/new or reading /dev/draw/n/ctl.
 type DrawCtlMsg struct {
 	N int
 
@@ -29,6 +37,10 @@ type DrawCtlMsg struct {
 	Clipping       image.Rectangle
 }
 
+// NewDrawCtrler creates a new DrawCtrler to interact with
+// the /dev/draw filesystem. It returns a reference to
+// a DrawCtrler, and a DrawCtlMsg representing the data
+// that was returned from opening /dev/draw/new.
 func NewDrawCtrler(n int) (*DrawCtrler, *DrawCtlMsg) {
 	filename := "/dev/draw/new"
 	f, err := os.Open(filename)
@@ -37,7 +49,8 @@ func NewDrawCtrler(n int) (*DrawCtrler, *DrawCtlMsg) {
 		return nil, nil
 	}
 
-	// id 1 is the current window based on /dev/winname
+	// id 1 reserved for the image represented by /dev/winname, so start
+	// allocating new IDs at 2.
 	dc := DrawCtrler{nextId: 2}
 	ctlString := dc.readCtlString(f)
 	msg := parseCtlString(ctlString)
@@ -49,7 +62,8 @@ func NewDrawCtrler(n int) (*DrawCtrler, *DrawCtlMsg) {
 	if msg.N >= 1 {
 		dc.N = msg.N
 		// open the data channel for the connection we just created so we can send messages to it.
-		//
+		// We don't close it so that it doesn't disappear from the /dev filesystem on us.
+		// It needs to be closed when the screen is cleaned up.
 		dfilename := fmt.Sprintf("/dev/draw/%d/data", msg.N)
 		f, err := os.OpenFile(dfilename, os.O_RDWR, 0)
 		if err != nil {
@@ -57,8 +71,6 @@ func NewDrawCtrler(n int) (*DrawCtrler, *DrawCtlMsg) {
 			return &dc, msg
 		}
 		dc.data = f
-		// We don't close it so that it doesn't disappear from the /dev filesystem on us.
-		// It needs to be closed when the screen is cleaned up.
 
 		// open the ctl file, even though we don't really use it
 		cfilename := fmt.Sprintf("/dev/draw/%d/ctl", msg.N)
@@ -89,7 +101,7 @@ func (d DrawCtrler) readCtlString(f io.Reader) string {
 
 // sendMessage sends the command represented by cmd to the data channel,
 // with the raw arguments in val (n.b. They need to be in little endian
-// byte order and match the cmd arguments described in draw(3)
+// byte order and match the cmd arguments described in draw(3))
 func (d DrawCtrler) sendMessage(cmd byte, val []byte) error {
 	realCmd := append([]byte{cmd}, val...)
 	_, err := d.data.Write(realCmd)
@@ -124,7 +136,7 @@ func (d *DrawCtrler) AllocBuffer(refresh byte, repl bool, r, clipr image.Rectang
 	// refresh can just be passed along directly.
 	msg[8] = refresh
 	// RGBA channel. This is the same format as image.RGBA.Pix,
-	// so that we can directly upload it.
+	// so that we can directly upload a buffer.
 	msg[9] = 8   // r8
 	msg[10] = 24 // g8
 	msg[11] = 40 // b8
@@ -217,12 +229,9 @@ func (d *DrawCtrler) Draw(dstid, srcid, maskid uint32, r image.Rectangle, srcp, 
 // It sends /dev/draw/n/data the message:
 //	y id[4] r[4*4] buf[x*1]
 func (d *DrawCtrler) ReplaceSubimage(dstid uint32, r image.Rectangle, pixels []byte) {
-	// There seems to be an implicit limit of 65536 bytes that writing
+	// 9p seems to be have an implicit limit of 65536 bytes that writing
 	// to /dev/draw/n/data can handle. So as a hack, send one
 	// line at a time if it's too big..
-	// TODO: This should try the LZ77 compressed 'Y' form of 'y' before
-	// falling back on one line at a time. Need to test if compress/flate
-	// will work.
 	rSize := r.Size()
 	if (rSize.X*rSize.Y*4 + 21) < 65536 {
 		msg := make([]byte, 20+(rSize.X*rSize.Y*4))
@@ -277,11 +286,11 @@ func (d *DrawCtrler) ReadSubimage(src uint32, r image.Rectangle) []uint8 {
 		}
 		return pixels
 	}
-	// The read won't fit in a single read to /dev/draw/n/data, so
-	// do it one line at a time... need to figure out if this
-	// limitation comes from Plan9, drawterm, or Go, but if
-	// the rectangle is too big, reading from it turns up an
-	// Eshortread error and reads 0 bytes.
+	// This has the same limitation of 65536 bytes as
+	// the 'y' command. Trying to read more than that will
+	// return 0 bytes and an Eshortread error.
+	// So, again, split it up into multiple reads and reconstruct
+	// it.
 
 	// TODO: This should calculate the maximum number of lines
 	// that can fit in one message and send a rectangle of that
@@ -295,7 +304,6 @@ func (d *DrawCtrler) ReadSubimage(src uint32, r image.Rectangle) []uint8 {
 		pixelsOffset := (i - r.Min.Y) * rSize.X * 4
 		d.sendMessage('r', msg)
 		_, err := d.data.Read(pixels[pixelsOffset:])
-		//copy(msg[20:], pixels[i*rSize.X*4:])
 		if err != nil {
 			panic(err)
 		}

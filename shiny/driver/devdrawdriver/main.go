@@ -9,20 +9,21 @@ import (
 	"golang.org/x/exp/shiny/screen"
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
-	//	"golang.org/x/mobile/event/lifecycle"
-	//"golang.org/x/mobile/event/paint"
 	"os"
 )
 
-// Main spawns 2 goroutines to make blocking read from /dev
+// Main spawns 2 goroutines to make blocking reads from /dev
 // interfaces, one for the mouse and one for the keyboard
+// Window events such as resize and move come in over the mouse
+// channel.
 func Main(f func(s screen.Screen)) {
 	mouseEvent := make(chan *mouse.Event)
 	keyboardEvent := make(chan *key.Event)
-	//windowChan := make(chan *wctlEvent)
 	doneChan := make(chan bool)
 
 	s := newScreenImpl()
+	// read the current window size that will be drawn into from
+	// /dev/wctl
 	windowSize, err := readWctl()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not read current window size.\n")
@@ -41,21 +42,16 @@ func Main(f func(s screen.Screen)) {
 	go keyboardEventHandler(keyboardEvent)
 	for {
 		select {
-		//case mEv := <-mouseEvent:
 		case mEv := <-mouseEvent:
 			if s.w != nil {
 				s.w.Queue.Send(mEv)
 			}
 		case kEv := <-keyboardEvent:
 			if s.w != nil {
-				//fmt.Printf("Queuing: %s\n", kEv)
 				s.w.Queue.Send(*kEv)
 			}
 		case <-doneChan:
 			return
 		}
-
-		// redraw the window after every event. This is mostly because otherwise the text printed via the
-		// test program overwrites the image, since it's in the same window on Plan9..
 	}
 }

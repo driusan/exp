@@ -25,9 +25,9 @@ func keyboardEventHandler(notifier chan *key.Event) {
 	// Closing /dev/consctl will cause the keyboard to stop being in raw mode. So defer the close instead of
 	// closing it right away.
 	defer ctl.Close()
-	rawon := []byte("rawon\n")
+	rawon := []byte("rawon")
 	n, err := ctl.Write(rawon)
-	if err != nil || n != 6 {
+	if err != nil || n != 5 {
 		fmt.Fprintf(os.Stderr, "Error converting keyboard into raw mode. Could not write rawon..\n")
 		return
 	}
@@ -54,6 +54,7 @@ func keyboardEventHandler(notifier chan *key.Event) {
 			Rune:      r,
 			Code:      code,
 			Modifiers: currentModifiers,
+			Direction: key.DirPress,
 		}
 
 	}

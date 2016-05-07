@@ -91,9 +91,13 @@ func (d DrawCtrler) readCtlString(f io.Reader) string {
 	var val []byte = make([]byte, 144)
 	n, err := f.Read(val)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading control string: %s\n", err)
 		return ""
 	}
-	if n != 144 {
+	// there are 12 11 character wide strings in a ctl message, each followed
+	// by a space. The last one may or may not have a terminating space.
+	if n < 143 {
+		fmt.Fprintf(os.Stderr, "Incorrect number of bytes in ctl string: %d\n", n)
 		return ""
 	}
 	return string(val)

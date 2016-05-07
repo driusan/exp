@@ -6,7 +6,7 @@ package devdrawdriver
 
 import (
 	"encoding/binary"
-	"fmt"
+	//	"fmt"
 	"golang.org/x/exp/shiny/screen"
 	"image"
 	//"sigint.ca/plan9/draw"
@@ -47,8 +47,8 @@ func (s *screenImpl) NewWindow(opts *screen.NewWindowOptions) (screen.Window, er
 }
 
 func newScreenImpl() *screenImpl {
-	ctrl, msg := NewDrawCtrler(0)
-	fmt.Printf("%s, %s\n", ctrl, msg)
+	ctrl, _ := NewDrawCtrler()
+	//fmt.Printf("%s, %s\n", ctrl, msg)
 	if ctrl != nil {
 		// makes ID 0x0001 refer to the same image as /dev/winname on this process.
 		ctrl.sendMessage('n', attachscreen())

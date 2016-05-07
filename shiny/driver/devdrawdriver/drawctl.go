@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/draw"
 	"io"
+	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -20,6 +21,9 @@ type DrawCtrler struct {
 	ctl  io.ReadWriteCloser
 	data io.ReadWriteCloser
 
+	// the maxmum message size that can be written to
+	// /dev/draw/data.
+	iounitSize int
 	// the next available ID to use when allocating
 	// an image
 	nextId uint32
@@ -41,7 +45,7 @@ type DrawCtlMsg struct {
 // the /dev/draw filesystem. It returns a reference to
 // a DrawCtrler, and a DrawCtlMsg representing the data
 // that was returned from opening /dev/draw/new.
-func NewDrawCtrler(n int) (*DrawCtrler, *DrawCtlMsg) {
+func NewDrawCtrler() (*DrawCtrler, *DrawCtlMsg) {
 	filename := "/dev/draw/new"
 	f, err := os.Open(filename)
 	if err != nil {
@@ -72,14 +76,25 @@ func NewDrawCtrler(n int) (*DrawCtrler, *DrawCtlMsg) {
 		}
 		dc.data = f
 
-		// open the ctl file, even though we don't really use it
-		cfilename := fmt.Sprintf("/dev/draw/%d/ctl", msg.N)
-		ctlfile, err := os.OpenFile(cfilename, os.O_RDWR, 0)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Could not open %s: %s\n", dfilename, err)
-			return &dc, msg
+		pid := os.Getpid() //env("pid")
+		if fdInfo, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/fd", pid)); err == nil {
+			fmt.Printf("PID: %d, %s\n", pid, fdInfo)
+		} else {
+			//fmt.Printf("Could not get info: %s\n", fdInfo)
 		}
-		dc.ctl = ctlfile
+		// TODO: Read this above by parsing /proc/$pid/fd
+		dc.iounitSize = 65510
+
+		/*
+			// open the ctl file, even though we don't really use it
+			cfilename := fmt.Sprintf("/dev/draw/%d/ctl", msg.N)
+			ctlfile, err := os.OpenFile(cfilename, os.O_RDWR, 0)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Could not open %s: %s\n", dfilename, err)
+				return &dc, msg
+			}
+			dc.ctl = ctlfile
+		*/
 	}
 	return &dc, msg
 }
@@ -237,7 +252,7 @@ func (d *DrawCtrler) ReplaceSubimage(dstid uint32, r image.Rectangle, pixels []b
 	// to /dev/draw/n/data can handle. So as a hack, send one
 	// line at a time if it's too big..
 	rSize := r.Size()
-	if (rSize.X*rSize.Y*4 + 21) < 65536 {
+	if (rSize.X*rSize.Y*4 + 21) < d.iounitSize {
 		msg := make([]byte, 20+(rSize.X*rSize.Y*4))
 		binary.LittleEndian.PutUint32(msg[0:], dstid)
 		binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
@@ -249,16 +264,24 @@ func (d *DrawCtrler) ReplaceSubimage(dstid uint32, r image.Rectangle, pixels []b
 		d.sendMessage('y', msg)
 		return
 	}
-	// TODO: This should calculate the maximum number of lines
-	// that can fit in one message and send a rectangle of that
-	// size, instead of 1 line at a time.
-	msg := make([]byte, 20+(rSize.X*4))
+
+	lineSize := d.iounitSize / 4 / rSize.X
+	msg := make([]byte, 20+(rSize.X*lineSize*4))
 	binary.LittleEndian.PutUint32(msg[0:], dstid)
 	binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
 	binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
-	for i := 0; i < r.Max.Y; i++ {
-		binary.LittleEndian.PutUint32(msg[8:], uint32(r.Min.Y+i))
-		binary.LittleEndian.PutUint32(msg[16:], uint32(r.Min.Y+i+1))
+	for i := r.Min.Y; i < r.Max.Y; i += lineSize {
+		endline := i + lineSize
+		if endline > r.Max.Y {
+			endline = r.Max.Y
+			msg = make([]byte, 20+(rSize.X*(endline-i)*4))
+			binary.LittleEndian.PutUint32(msg[0:], dstid)
+			binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
+			binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
+
+		}
+		binary.LittleEndian.PutUint32(msg[8:], uint32(i))
+		binary.LittleEndian.PutUint32(msg[16:], uint32(endline))
 		copy(msg[20:], pixels[i*rSize.X*4:])
 		d.sendMessage('y', msg)
 	}
@@ -275,7 +298,8 @@ func (d *DrawCtrler) ReadSubimage(src uint32, r image.Rectangle) []uint8 {
 	rSize := r.Size()
 	msg := make([]byte, 20)
 	pixels := make([]byte, (rSize.X * rSize.Y * 4))
-	if (rSize.X * rSize.Y * 3) < 65536 {
+
+	if (rSize.X * rSize.Y * 4) < d.iounitSize {
 		binary.LittleEndian.PutUint32(msg[0:], src)
 		binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
 		binary.LittleEndian.PutUint32(msg[8:], uint32(r.Min.Y))
@@ -302,9 +326,15 @@ func (d *DrawCtrler) ReadSubimage(src uint32, r image.Rectangle) []uint8 {
 	binary.LittleEndian.PutUint32(msg[0:], src)
 	binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
 	binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
-	for i := r.Min.Y; i < r.Max.Y; i += 1 {
+	lineSize := d.iounitSize / 4 / rSize.X
+
+	for i := r.Min.Y; i < r.Max.Y; i += lineSize {
+		endline := i + lineSize
+		if endline > r.Max.Y {
+			endline = r.Max.Y
+		}
 		binary.LittleEndian.PutUint32(msg[8:], uint32(i))
-		binary.LittleEndian.PutUint32(msg[16:], uint32(i+1))
+		binary.LittleEndian.PutUint32(msg[16:], uint32(endline))
 		pixelsOffset := (i - r.Min.Y) * rSize.X * 4
 		d.sendMessage('r', msg)
 		_, err := d.data.Read(pixels[pixelsOffset:])

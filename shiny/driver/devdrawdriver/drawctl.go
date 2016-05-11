@@ -1,13 +1,14 @@
 package devdrawdriver
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"io"
-	//"io/ioutil"
+	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -78,16 +79,36 @@ func NewDrawCtrler() (*DrawCtrler, *DrawCtlMsg, error) {
 		return dc, msg, fmt.Errorf("Could not open %s: %v\n", fn, err)
 	}
 	dc.data = fData
-	/*
-		   pid := os.Getpid() //env("pid")
-		if fdInfo, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/fd", pid)); err == nil {
-			//TODO: Parse fdInfo and read the real iounitSize, instead of hardcoding it
-			//      to what drawterm seems to use.
-		} else {
-			dc.iounitSize = 65510
+
+	// read the iounit size from the /proc filesystem.
+	pid := os.Getpid()
+	if fdInfo, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/fd", pid)); err == nil {
+		lines := bytes.Split(fdInfo, []byte{'\n'})
+		// See man proc(3) for a description of the format of /proc/$pid/fd that's
+		// being parsed to find the iounit size
+		// the first line is just the current wd, so don't range over it
+		for _, line := range lines[1:] {
+			fInfo := bytes.Fields(line)
+			if len(fInfo) >= 10 && string(fInfo[9]) == fn {
+				// found /dev/draw/N/data in the list of open files, so get
+				// the iounit size of it.
+				i, err := strconv.Atoi(string(fInfo[7]))
+				if err != nil {
+					return nil, nil, fmt.Errorf("Invalid iounit size. Could not convert to integer.")
+				}
+				dc.iounitSize = i
+				break
+
+			}
+
 		}
-	*/
-	dc.iounitSize = 65510
+
+		if dc.iounitSize == 0 {
+			return nil, nil, fmt.Errorf("Could not parse iounit size.\n")
+		}
+	} else {
+		return nil, nil, fmt.Errorf("Could not determine iounit size: %v\n", err)
+	}
 	return dc, msg, nil
 }
 
@@ -241,9 +262,9 @@ func (d *DrawCtrler) Draw(dstid, srcid, maskid uint32, r image.Rectangle, srcp, 
 // It sends /dev/draw/n/data the message:
 //	y id[4] r[4*4] buf[x*1]
 func (d *DrawCtrler) ReplaceSubimage(dstid uint32, r image.Rectangle, pixels []byte) {
-	// 9p seems to be have an implicit limit of 65536 bytes that writing
-	// to /dev/draw/n/data can handle. So as a hack, send one
-	// line at a time if it's too big..
+	// 9p limits the reads and writes to the iounit size, which is read from /proc/$pid/fd
+	// at startup. So we need to split up the command into multiple 'y' commands of the
+	// maximum iounit size if it doesn't fit in 1 message.
 	rSize := r.Size()
 	if (rSize.X*rSize.Y*4 + 21) < d.iounitSize {
 		msg := make([]byte, 20+(rSize.X*rSize.Y*4))
@@ -307,15 +328,12 @@ func (d *DrawCtrler) ReadSubimage(src uint32, r image.Rectangle) []uint8 {
 		}
 		return pixels
 	}
-	// This has the same limitation of 65536 bytes as
-	// the 'y' command. Trying to read more than that will
-	// return 0 bytes and an Eshortread error.
+	// This has the same limitation of the 'y' command.
+	// Trying to read more than iounit size will return 0 bytes
+	// and an Eshortread error.
 	// So, again, split it up into multiple reads and reconstruct
 	// it.
 
-	// TODO: This should calculate the maximum number of lines
-	// that can fit in one message and send a rectangle of that
-	// size, instead of 1 line at a time.
 	binary.LittleEndian.PutUint32(msg[0:], src)
 	binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
 	binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))

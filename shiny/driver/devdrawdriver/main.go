@@ -5,11 +5,10 @@
 package devdrawdriver
 
 import (
-	"fmt"
 	"golang.org/x/exp/shiny/screen"
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
-	"os"
+	"log"
 )
 
 // Main spawns 2 goroutines to make blocking reads from /dev
@@ -21,13 +20,15 @@ func Main(f func(s screen.Screen)) {
 	keyboardEvent := make(chan *key.Event)
 	doneChan := make(chan bool)
 
-	s := newScreenImpl()
+	s, err := newScreenImpl()
+	if err != nil {
+		log.Fatalf("new screen: %v\n", err)
+	}
 	// read the current window size that will be drawn into from
 	// /dev/wctl
 	windowSize, err := readWctl()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Could not read current window size.\n")
-		return
+		log.Fatalf("read current window size: %v\n", err)
 	}
 	s.windowFrame = windowSize
 	go func() {

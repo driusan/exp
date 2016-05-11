@@ -6,7 +6,7 @@ package devdrawdriver
 
 import (
 	"encoding/binary"
-	//	"fmt"
+	"fmt"
 	"golang.org/x/exp/shiny/screen"
 	"image"
 	//"sigint.ca/plan9/draw"
@@ -46,26 +46,25 @@ func (s *screenImpl) NewWindow(opts *screen.NewWindowOptions) (screen.Window, er
 	return w, nil
 }
 
-func newScreenImpl() *screenImpl {
-	ctrl, _ := NewDrawCtrler()
-	//fmt.Printf("%s, %s\n", ctrl, msg)
-	if ctrl != nil {
-		// makes ID 0x0001 refer to the same image as /dev/winname on this process.
-		ctrl.sendMessage('n', attachscreen())
-
-		// create a new screen for us to use
-		ctrl.sendMessage('A', []byte{0, 1, 0, 0, // create a screen with an arbitrary id
-			0, 0, 0, 1, // backed by the current window
-			0, 0, 0, 1, // filled with the same image
-			1, // and make it public, because why not
-		})
+func newScreenImpl() (*screenImpl, error) {
+	ctrl, _, err := NewDrawCtrler()
+	if err != nil {
+		return nil, fmt.Errorf("new controller: %v", err)
 	}
-
-	s := &screenImpl{
+	//fmt.Println(ctrl, msg)
+	// makes ID 0x0001 refer to the same image as /dev/winname on this process.
+	ctrl.sendMessage('n', attachscreen())
+	// create a new screen for us to use
+	ctrl.sendMessage('A', []byte{
+		0, 1, 0, 0, // create a screen with an arbitrary id
+		0, 0, 0, 1, // backed by the current window
+		0, 0, 0, 1, // filled with the same image
+		1, // and make it public, because why not
+	})
+	return &screenImpl{
 		ctl:     ctrl,
 		windows: make([]windowId, 0),
-	}
-	return s
+	}, nil
 }
 
 // moves the current shiny windows to be overlaid on the current plan9 window

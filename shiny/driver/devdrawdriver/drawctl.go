@@ -7,14 +7,14 @@ import (
 	"image/color"
 	"image/draw"
 	"io"
-	"io/ioutil"
+	//"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
 )
 
 // A DrawCtrler is an object which holds references to
-// /dev/draw/n/data and ctl, and allows you to send or
+// /dev/draw/n/^(data ctl), and allows you to send or
 // receive messages from it.
 type DrawCtrler struct {
 	N    int
@@ -41,81 +41,74 @@ type DrawCtlMsg struct {
 	Clipping       image.Rectangle
 }
 
+const NewScreen = "/dev/draw/new"
+
 // NewDrawCtrler creates a new DrawCtrler to interact with
 // the /dev/draw filesystem. It returns a reference to
 // a DrawCtrler, and a DrawCtlMsg representing the data
 // that was returned from opening /dev/draw/new.
-func NewDrawCtrler() (*DrawCtrler, *DrawCtlMsg) {
-	filename := "/dev/draw/new"
-	f, err := os.Open(filename)
+func NewDrawCtrler() (*DrawCtrler, *DrawCtlMsg, error) {
+	fNew, err := os.Open(NewScreen)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Could not open %s: %s\n", filename, err)
-		return nil, nil
+		return nil, nil, fmt.Errorf("Could not open %s: %v\n", NewScreen, err)
 	}
+	defer fNew.Close()
 
-	// id 1 reserved for the image represented by /dev/winname, so start
-	// allocating new IDs at 2.
-	dc := DrawCtrler{nextId: 2}
-	ctlString := dc.readCtlString(f)
+	//      id 1 reserved for the image represented by /dev/winname, so
+	//      start allocating new IDs at 2.
+	dc := &DrawCtrler{nextId: 2}
+	ctlString := dc.readCtlString(fNew)
 	msg := parseCtlString(ctlString)
 	if msg == nil {
-		fmt.Fprintf(os.Stderr, "Could not parse ctl string from %s: %s\n", filename, ctlString)
-		return &dc, nil
+		return dc, nil, fmt.Errorf("Could not parse ctl string from %s: %s\n", NewScreen, ctlString)
 	}
 
-	if msg.N >= 1 {
-		dc.N = msg.N
-		// open the data channel for the connection we just created so we can send messages to it.
-		// We don't close it so that it doesn't disappear from the /dev filesystem on us.
-		// It needs to be closed when the screen is cleaned up.
-		dfilename := fmt.Sprintf("/dev/draw/%d/data", msg.N)
-		f, err := os.OpenFile(dfilename, os.O_RDWR, 0)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Could not open %s: %s\n", dfilename, err)
-			return &dc, msg
-		}
-		dc.data = f
-
-		pid := os.Getpid() //env("pid")
+	if msg.N < 1 {
+		// huh? what now?
+		return nil, nil, fmt.Errorf("draw index less than one: %d", msg.N)
+	}
+	dc.N = msg.N
+	//      open the data channel for the connection we just created so
+	//      we can send messages to it.  We don't close it so that it
+	//      doesn't disappear from the /dev filesystem on us.  It needs
+	//      to be closed when the screen is cleaned up.
+	fn := fmt.Sprintf("/dev/draw/%d/data", msg.N)
+	fData, err := os.OpenFile(fn, os.O_RDWR, 0)
+	if err != nil {
+		return dc, msg, fmt.Errorf("Could not open %s: %v\n", fn, err)
+	}
+	dc.data = fData
+	/*
+		   pid := os.Getpid() //env("pid")
 		if fdInfo, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/fd", pid)); err == nil {
-			fmt.Printf("PID: %d, %s\n", pid, fdInfo)
+			//TODO: Parse fdInfo and read the real iounitSize, instead of hardcoding it
+			//      to what drawterm seems to use.
 		} else {
-			//fmt.Printf("Could not get info: %s\n", fdInfo)
+			dc.iounitSize = 65510
 		}
-		// TODO: Read this above by parsing /proc/$pid/fd
-		dc.iounitSize = 65510
-
-		/*
-			// open the ctl file, even though we don't really use it
-			cfilename := fmt.Sprintf("/dev/draw/%d/ctl", msg.N)
-			ctlfile, err := os.OpenFile(cfilename, os.O_RDWR, 0)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Could not open %s: %s\n", dfilename, err)
-				return &dc, msg
-			}
-			dc.ctl = ctlfile
-		*/
-	}
-	return &dc, msg
+	*/
+	dc.iounitSize = 65510
+	return dc, msg, nil
 }
 
-// reads the output of /dev/draw/new or /dev/draw/n/ctl and returns it without
-// doing any parsing. It should be passed along to parseCtlString to create
-// a *DrawCtlMsg
+// reads the output of /dev/draw/new or /dev/draw/n/ctl and returns
+// it without doing any parsing.  It should be passed along to
+// parseCtlString to create a *DrawCtlMsg
 func (d DrawCtrler) readCtlString(f io.Reader) string {
-	var val []byte = make([]byte, 144)
+	val := make([]byte, 256)
 	n, err := f.Read(val)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading control string: %s\n", err)
 		return ""
 	}
 	// there are 12 11 character wide strings in a ctl message, each followed
-	// by a space. The last one may or may not have a terminating space.
-	if n < 143 {
+	// by a space. The last one may or may not have a terminating space, depending
+	// on draw implementation, but it's irrelevant if it does.
+	if err != nil || n < 143 {
 		fmt.Fprintf(os.Stderr, "Incorrect number of bytes in ctl string: %d\n", n)
 		return ""
 	}
-	return string(val)
+	return string(val[:144])
 }
 
 // sendMessage sends the command represented by cmd to the data channel,

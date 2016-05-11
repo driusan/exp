@@ -17,6 +17,7 @@ type bufferImpl struct {
 func (b *bufferImpl) Release() {
 	// the image will get garbage collected
 }
+
 func (b *bufferImpl) RGBA() *image.RGBA {
 	return b.i
 }
@@ -24,6 +25,7 @@ func (b *bufferImpl) RGBA() *image.RGBA {
 func (b *bufferImpl) Bounds() image.Rectangle {
 	return b.i.Bounds()
 }
+
 func (b *bufferImpl) Size() image.Point {
 	return b.i.Bounds().Size()
 }

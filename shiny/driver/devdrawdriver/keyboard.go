@@ -191,7 +191,7 @@ func RuneToCode(r rune) (key.Code, key.Modifiers) {
 
 		*/
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown unicode character %d %c %s, %u nsupported by /dev/draw driver.\n", r, r, r, r)
+		fmt.Fprintf(os.Stderr, "Unknown unicode character %d %c %s, %u unsupported by /dev/draw driver.\n", r, r, r, r)
 		return key.CodeUnknown, 0
 	}
 }

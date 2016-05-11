@@ -28,8 +28,9 @@ func readWctl() (image.Rectangle, error) {
 		return image.ZR, err
 	}
 	sizes := strings.Fields(string(value))
+	// remove 4 pixels from each side to take rio's borders into consideration.
 	return image.Rectangle{
-		Min: image.Point{strToInt(sizes[0]), strToInt(sizes[1])},
-		Max: image.Point{strToInt(sizes[2]), strToInt(sizes[3])},
+		Min: image.Point{strToInt(sizes[0]) + 4, strToInt(sizes[1]) + 4},
+		Max: image.Point{strToInt(sizes[2]) - 8, strToInt(sizes[3]) - 8},
 	}, nil
 }

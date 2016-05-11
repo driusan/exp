@@ -30,7 +30,9 @@ func Main(f func(s screen.Screen)) {
 	if err != nil {
 		log.Fatalf("read current window size: %v\n", err)
 	}
+
 	s.windowFrame = windowSize
+
 	go func() {
 		// run the callback with the screen implementation, then send
 		// a notification to break out of the infinite loop when it
@@ -45,6 +47,10 @@ func Main(f func(s screen.Screen)) {
 		select {
 		case mEv := <-mouseEvent:
 			if s.w != nil {
+				// translate the mouse event from the screen coordinate system to the window
+				// coordinate system
+				mEv.X -= float32(s.windowFrame.Min.X)
+				mEv.Y -= float32(s.windowFrame.Min.Y)
 				s.w.Queue.Send(mEv)
 			}
 		case kEv := <-keyboardEvent:

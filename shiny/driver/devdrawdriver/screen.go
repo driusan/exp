@@ -59,7 +59,7 @@ func newScreenImpl() (*screenImpl, error) {
 		0, 1, 0, 0, // create a screen with an arbitrary id
 		0, 0, 0, 1, // backed by the current window
 		0, 0, 0, 1, // filled with the same image
-		1, // and make it public, because why not
+		0, // and make it public, because why not
 	})
 	return &screenImpl{
 		ctl:     ctrl,
@@ -110,6 +110,8 @@ func redrawWindow(s *screenImpl, r image.Rectangle) {
 		binary.LittleEndian.PutUint32(args[8:], uint32(winId))
 		s.ctl.sendMessage('d', args)
 	}
+	// flush the buffer
+	s.ctl.sendMessage('v', nil)
 }
 
 func attachscreen() []byte {

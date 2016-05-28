@@ -20,7 +20,7 @@ import (
 type windowId uint32
 
 type windowImpl struct {
-	uploadImpl
+	*uploadImpl
 	s *screenImpl
 	event.Queue
 	winImageId windowId
@@ -36,6 +36,23 @@ func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectang
 	// 4. Upload the transformed data to the new ImageId
 	// 3. SetOp
 	// 4. Draw.
+
+	// step 0: check if there's no rotation, in which case we don't need to bother.
+	if src2dst[0] == 1 && src2dst[1] == 0 &&
+	   src2dst[3] == 0 && src2dst[4] == 1 {
+		// it's a translation matrix with no rotation, take a shortcut.
+		srcT := src.(*textureImpl)
+		srSize := sr.Size()
+		newRectangle := image.Rectangle{
+			Min: image.Point{int(src2dst[2]), int(src2dst[5])},
+			Max: image.Point{int(src2dst[2])+srSize.X, int(src2dst[5])+srSize.Y},
+		}
+		w.s.ctl.SetOp(op)
+fmt.Printf("Here I am, %d %d %s\n", w.winImageId, srcT.textureId, newRectangle)
+		w.s.ctl.Draw(uint32(w.winImageId), uint32(srcT.textureId), uint32(srcT.textureId), newRectangle, sr.Min, image.ZP)
+		return
+	
+	}
 
 	// step 1: read the subimage data
 	t := src.(*textureImpl)
@@ -100,7 +117,8 @@ func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectang
 	w.s.ctl.SetOp(op)
 	// 4. Draw.
 	w.s.ctl.Draw(uint32(w.winImageId), imageId, imageId, newRectangle, image.ZP, image.ZP)
-	// the image is already used, so we might as well free it.
+	// the image is already used and there's no way to reference it, so we might as well free it
+	// now instead of waiting until Release() is called.
 	w.s.ctl.FreeID(imageId)
 
 }
@@ -114,11 +132,15 @@ func (w *windowImpl) Scale(dr image.Rectangle, src screen.Texture, sr image.Rect
 }
 
 func (w *windowImpl) Publish() screen.PublishResult {
-	repositionWindow(w.s, w.s.windowFrame)
+//	repositionWindow(w.s, w.s.windowFrame)
 	redrawWindow(w.s, w.s.windowFrame)
 	return screen.PublishResult{false}
 }
 
+func (w *windowImpl) resize(r image.Rectangle) {
+	w.s.ctl.Reclip(uint32(w.winImageId), false, r)
+
+}
 func newWindowImpl(s *screenImpl) *windowImpl {
 	// Allocate a /dev/draw image to represent our window.
 	// It has the same size as the current Plan 9 image, but in it's
@@ -126,7 +148,7 @@ func newWindowImpl(s *screenImpl) *windowImpl {
 	// default to a black background for testing.
 	r := image.Rectangle{image.ZP, s.windowFrame.Size()}
 
-	uploader := newUploadImpl(s, r, color.RGBA{0, 0, 0, 255})
+	uploader := newUploadImpl(s, r, color.RGBA{0, 255, 0, 255})
 	w := &windowImpl{
 		uploadImpl: uploader,
 		s:          s,

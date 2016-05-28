@@ -11,7 +11,7 @@ import (
 type textureId uint32
 
 type textureImpl struct {
-	uploadImpl
+	*uploadImpl
 	size      image.Point
 	textureId textureId
 }

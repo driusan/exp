@@ -5,6 +5,7 @@
 package devdrawdriver
 
 import (
+	"fmt"
 	"golang.org/x/exp/shiny/driver/internal/drawer"
 	"golang.org/x/exp/shiny/driver/internal/event"
 	"golang.org/x/exp/shiny/screen"
@@ -148,7 +149,7 @@ func newWindowImpl(s *screenImpl) *windowImpl {
 	// default to a black background for testing.
 	r := image.Rectangle{image.ZP, s.windowFrame.Size()}
 
-	uploader := newUploadImpl(s, r, color.RGBA{0, 255, 0, 255})
+	uploader := newUploadImpl(s, r, color.RGBA{255, 255, 255, 255})
 	w := &windowImpl{
 		uploadImpl: uploader,
 		s:          s,

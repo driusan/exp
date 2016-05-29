@@ -193,7 +193,8 @@ func (d *DrawCtrler) AllocBuffer(refresh byte, repl bool, r, clipr image.Rectang
 	// color.RGBA() returns a uint16 (actually a uint32
 	// with only the lower 16 bits set), so shift it to
 	// convert it to a uint8.
-	rd, g, b, a := color.RGBA()
+rd, g, b, a := color.RGBA()
+//	rd, g, b, _ := color.RGBA()
 	msg[46] = byte(a >> 8)
 	msg[47] = byte(b >> 8)
 	msg[48] = byte(g >> 8)
@@ -354,6 +355,22 @@ func (d *DrawCtrler) ReadSubimage(src uint32, r image.Rectangle) []uint8 {
 		}
 	}
 	return pixels
+}
+
+func (d *DrawCtrler) Reclip(dstid uint32, repl bool, r image.Rectangle) {
+	msg := make([]byte, 21)
+
+	binary.LittleEndian.PutUint32(msg[0:], dstid)
+	if repl {
+		msg[4] = 1
+	}
+	binary.LittleEndian.PutUint32(msg[5:], uint32(r.Min.X))
+	binary.LittleEndian.PutUint32(msg[9:], uint32(r.Min.Y))
+	binary.LittleEndian.PutUint32(msg[13:], uint32(r.Max.X))
+	binary.LittleEndian.PutUint32(msg[17:], uint32(r.Max.Y))
+	d.sendMessage('c', msg)
+
+
 }
 
 // parseCtlString parses the output of the format returned by /dev/draw/new.

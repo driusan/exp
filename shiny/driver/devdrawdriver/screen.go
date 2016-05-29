@@ -11,6 +11,7 @@ import (
 	"image"
 	//"sigint.ca/plan9/draw"
 	"io/ioutil"
+	"image/draw"
 )
 
 type screenImpl struct {
@@ -57,8 +58,8 @@ func newScreenImpl() (*screenImpl, error) {
 	// create a new screen for us to use
 	ctrl.sendMessage('A', []byte{
 		0, 1, 0, 0, // create a screen with an arbitrary id
-		0, 0, 0, 1, // backed by the current window
-		0, 0, 0, 1, // filled with the same image
+		0, 0, 0, 0, // backed by the current window
+		0, 0, 0, 0, // filled with the same image
 		0, // and make it public, because why not
 	})
 	return &screenImpl{
@@ -85,6 +86,8 @@ func repositionWindow(s *screenImpl, r image.Rectangle) {
 	for _, winId := range s.windows {
 		binary.LittleEndian.PutUint32(args[0:], uint32(winId))
 		s.ctl.sendMessage('o', args)
+	//	s.ctl.Reclip(uint32(winId), false, r)
+		//s.ctl.Reclip(uint32(winId), false, r)
 	}
 }
 
@@ -108,6 +111,7 @@ func redrawWindow(s *screenImpl, r image.Rectangle) {
 		// use the window itself as a mask, so that it's opaque.
 		// (or at least uses it's own alpha channel)
 		binary.LittleEndian.PutUint32(args[8:], uint32(winId))
+		s.ctl.SetOp(draw.Src)
 		s.ctl.sendMessage('d', args)
 	}
 	// flush the buffer

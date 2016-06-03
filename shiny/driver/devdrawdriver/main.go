@@ -51,7 +51,7 @@ func Main(f func(s screen.Screen)) {
 				// coordinate system
 				mEv.X -= float32(s.windowFrame.Min.X)
 				mEv.Y -= float32(s.windowFrame.Min.Y)
-				s.w.Queue.Send(mEv)
+				s.w.Queue.Send(*mEv)
 			}
 		case kEv := <-keyboardEvent:
 			if s.w != nil {

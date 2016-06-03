@@ -40,19 +40,19 @@ func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectang
 
 	// step 0: check if there's no rotation, in which case we don't need to bother.
 	if src2dst[0] == 1 && src2dst[1] == 0 &&
-	   src2dst[3] == 0 && src2dst[4] == 1 {
+		src2dst[3] == 0 && src2dst[4] == 1 {
 		// it's a translation matrix with no rotation, take a shortcut.
 		srcT := src.(*textureImpl)
 		srSize := sr.Size()
 		newRectangle := image.Rectangle{
 			Min: image.Point{int(src2dst[2]), int(src2dst[5])},
-			Max: image.Point{int(src2dst[2])+srSize.X, int(src2dst[5])+srSize.Y},
+			Max: image.Point{int(src2dst[2]) + srSize.X, int(src2dst[5]) + srSize.Y},
 		}
 		w.s.ctl.SetOp(op)
-fmt.Printf("Here I am, %d %d %s\n", w.winImageId, srcT.textureId, newRectangle)
+		fmt.Printf("Here I am, %d %d %s\n", w.winImageId, srcT.textureId, newRectangle)
 		w.s.ctl.Draw(uint32(w.winImageId), uint32(srcT.textureId), uint32(srcT.textureId), newRectangle, sr.Min, image.ZP)
 		return
-	
+
 	}
 
 	// step 1: read the subimage data
@@ -64,7 +64,7 @@ fmt.Printf("Here I am, %d %d %s\n", w.winImageId, srcT.textureId, newRectangle)
 
 	// step 2: transform it into dst space
 	// 2a. Calculate the size of the translated buffer by multiplying
-	// the transformation through on sr.Min and sr.Max
+	// the transformation through on sr.Min and sr.Max.
 
 	// helper function to do the calculations of src2dst..
 	mapPoint := func(p image.Point) image.Point {
@@ -133,7 +133,6 @@ func (w *windowImpl) Scale(dr image.Rectangle, src screen.Texture, sr image.Rect
 }
 
 func (w *windowImpl) Publish() screen.PublishResult {
-//	repositionWindow(w.s, w.s.windowFrame)
 	redrawWindow(w.s, w.s.windowFrame)
 	return screen.PublishResult{false}
 }
@@ -146,7 +145,6 @@ func newWindowImpl(s *screenImpl) *windowImpl {
 	// Allocate a /dev/draw image to represent our window.
 	// It has the same size as the current Plan 9 image, but in it's
 	// internal coordinate system the origin is 0, 0
-	// default to a black background for testing.
 	r := image.Rectangle{image.ZP, s.windowFrame.Size()}
 
 	uploader := newUploadImpl(s, r, color.RGBA{255, 255, 255, 255})

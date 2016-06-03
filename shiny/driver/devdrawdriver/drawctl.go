@@ -193,8 +193,8 @@ func (d *DrawCtrler) AllocBuffer(refresh byte, repl bool, r, clipr image.Rectang
 	// color.RGBA() returns a uint16 (actually a uint32
 	// with only the lower 16 bits set), so shift it to
 	// convert it to a uint8.
-rd, g, b, a := color.RGBA()
-//	rd, g, b, _ := color.RGBA()
+	rd, g, b, a := color.RGBA()
+	//	rd, g, b, _ := color.RGBA()
 	msg[46] = byte(a >> 8)
 	msg[47] = byte(b >> 8)
 	msg[48] = byte(g >> 8)
@@ -257,6 +257,142 @@ func (d *DrawCtrler) Draw(dstid, srcid, maskid uint32, r image.Rectangle, srcp, 
 	d.sendMessage('d', msg)
 }
 
+func getLargestPrefix([]byte) (idx, size uint32) {
+	// TODO: Implement
+	return 0, 0
+}
+func compress(pix []byte) []byte {
+	val := make([]byte, 0) //len(pix))
+	for i := 0; i < len(pix); {
+		if idx, size := getLargestPrefix(pix); size > 2 {
+			// TODO: Implement the actual compression here.
+			fmt.Printf("Should be putting %d from %d\n", idx, size)
+		} else {
+			// Just copy a bunch of bytes
+			if left := len(pix) - i; left >= 128 {
+				val = append(val, 0xFF)
+				val = append(val, pix[i:i+128]...)
+
+				i += 128
+			} else {
+				val = append(val, (0x80 | byte(left-1)))
+				val = append(val, pix[i:i+left]...)
+
+				i += left
+			}
+		}
+
+	}
+	return val
+}
+
+// Implements the compression format described in image(6) for use in
+// 'Y' messages.
+func (d *DrawCtrler) compressedReplaceSubimage(dstid uint32, r image.Rectangle, pixels []byte) {
+	fmt.Printf("Replacing using compression.\n")
+	// "A compression block begins with two decimal strings of twelve bytes each. The first
+	// number is one more than the y coordinate of the last row of the block. The second
+	// is the number of bytes of compressed data in the block, not including the
+	// two decimal strings. This number must not be larger than 6000.
+	//
+	// Pixels are encoding using a version of Lempel & Ziv's sliging window scheme LZ77."
+
+	// There's 4 bytes per pixel in an RGBA, so for each iteration compress
+	// rSize.X*4 = 1 line of data, check if it's over 6000, send the Y message
+	// if so.
+
+	blockYStart := 0
+	rSize := r.Size()
+	maxCompressed := 0
+	compressed := make([]byte, 0)
+	// use rSize instead of r.Min.Y to make indexing into pixels easier.
+	for i := 0; i < rSize.Y; i += 1 {
+		rowStart := i * 4 * rSize.X
+		linePixels := pixels[rowStart : rowStart+(rSize.X*4)]
+		compressedLine := compress(linePixels)
+		if maxCompressed+len(compressedLine) > 6000 {
+			d.sendMessage('D', []byte{1})
+			// add the compression block header described in image(6)
+			cSize := fmt.Sprintf("%12d", len(compressed))
+			endlineS := fmt.Sprintf("%12d", r.Min.Y+i)
+			fmt.Printf("Size: %s Endline: %s on line %d\n", cSize, endlineS, i)
+			compressionBlock := make([]byte, 24)
+			copy(compressionBlock[0:], []byte(endlineS))
+			copy(compressionBlock[12:], []byte(cSize))
+			fmt.Printf("Header % x\n", compressionBlock)
+			compressionBlock = append(compressionBlock, compressed...)
+
+			// construct the message for /dev/draw/data
+			msg := make([]byte, 20+len(compressionBlock))
+			binary.LittleEndian.PutUint32(msg[0:], dstid)
+			binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
+			binary.LittleEndian.PutUint32(msg[8:], uint32(r.Min.Y+blockYStart))
+			binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
+			binary.LittleEndian.PutUint32(msg[16:], uint32(r.Min.Y+i-1))
+			copy(msg[20:], compressionBlock)
+			fmt.Printf("Sending Y\n")
+			d.sendMessage('Y', msg)
+
+			// keep track of information for the next message
+			blockYStart = i
+			compressed = compressedLine //make([]byte, 6000)
+			maxCompressed = 0
+			// send the 'Y' message
+		} else {
+			fmt.Printf("Added line %d\n", i)
+			compressed = append(compressed, compressedLine...) //copy(compressed[maxCompressed:], compressedLine)
+			maxCompressed += len(compressedLine)
+		}
+
+	}
+	/*
+		for i := 0; i < len(pixels); i += 1 {
+			if i %
+			//	fmt.Printf("At %d of %d\n", i, len(pixels))
+			if left := len(pixels) - i; left >= 128 {
+				compressed[maxCompressed] = 0xFF
+				copy(compressed[maxCompressed+1:], pixels[i:i+128])
+				i += 128
+				maxCompressed += 129
+			} else {
+				compressed[maxCompressed] = 0x80 | byte(left)
+				copy(compressed[maxCompressed+1:], pixels[i:i+left])
+				maxCompressed += left+1
+				done = true
+			}
+			if i > 6000 {
+				fmt.Printf("Max compressed: %d\n", maxCompressed)
+			}
+			if maxCompressed+128 > 6000 || done {
+				endLine := uint32(i / rSize.X)
+				size := fmt.Sprintf("%.12d", maxCompressed)
+				endlineS := fmt.Sprintf("%.12d", endLine)
+				print("Size:")
+				print(size)
+				print("End ling")
+				print(endlineS)
+				compressionBlock := make([]byte, 24)
+				copy(compressionBlock[0:],  []byte(endlineS))
+				copy(compressionBlock[12:], []byte(size))
+				compressionBlock = append(compressionBlock, compressed[0:maxCompressed]...)
+
+				msg := make([]byte, 20+len(compressionBlock))
+				binary.LittleEndian.PutUint32(msg[0:], dstid)
+				binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
+				binary.LittleEndian.PutUint32(msg[8:], uint32(r.Min.Y+int(blockYStart)))
+				binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
+				binary.LittleEndian.PutUint32(msg[16:], uint32(endLine))
+
+				copy(msg[20:], compressionBlock)
+				d.sendMessage('Y', msg)
+
+				blockYStart = endLine
+				compressed = make([]byte, 6000)
+				maxCompressed = 0
+			}
+		}*/
+}
+
 // ReplaceSubimage replaces the rectangle r with the pixel buffer
 // defined by pixels.
 //
@@ -266,6 +402,16 @@ func (d *DrawCtrler) ReplaceSubimage(dstid uint32, r image.Rectangle, pixels []b
 	// 9p limits the reads and writes to the iounit size, which is read from /proc/$pid/fd
 	// at startup. So we need to split up the command into multiple 'y' commands of the
 	// maximum iounit size if it doesn't fit in 1 message.
+
+	if d.iounitSize < 65535 && len(pixels) > 256 {
+		// the in-memory /dev/draw driver has an iounit size of 65535. If it's less than
+		// that, it's because it's a remote implementation with some overhead somewhere.
+		// In that case, use the compresssed 'Y' form instead and skip this.
+		// Don't other with small images, because the overhead of the compression will
+		// be worse than the gain. 256 is entirely arbitrary.
+		d.compressedReplaceSubimage(dstid, r, pixels)
+		return
+	}
 	rSize := r.Size()
 	if (rSize.X*rSize.Y*4 + 21) < d.iounitSize {
 		msg := make([]byte, 20+(rSize.X*rSize.Y*4))
@@ -369,7 +515,6 @@ func (d *DrawCtrler) Reclip(dstid uint32, repl bool, r image.Rectangle) {
 	binary.LittleEndian.PutUint32(msg[13:], uint32(r.Max.X))
 	binary.LittleEndian.PutUint32(msg[17:], uint32(r.Max.Y))
 	d.sendMessage('c', msg)
-
 
 }
 

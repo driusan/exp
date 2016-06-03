@@ -10,8 +10,8 @@ import (
 	"golang.org/x/exp/shiny/screen"
 	"image"
 	//"sigint.ca/plan9/draw"
-	"io/ioutil"
 	"image/draw"
+	"io/ioutil"
 )
 
 type screenImpl struct {
@@ -86,7 +86,7 @@ func repositionWindow(s *screenImpl, r image.Rectangle) {
 	for _, winId := range s.windows {
 		binary.LittleEndian.PutUint32(args[0:], uint32(winId))
 		s.ctl.sendMessage('o', args)
-	//	s.ctl.Reclip(uint32(winId), false, r)
+		//	s.ctl.Reclip(uint32(winId), false, r)
 		//s.ctl.Reclip(uint32(winId), false, r)
 	}
 }

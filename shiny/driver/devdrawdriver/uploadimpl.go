@@ -5,7 +5,7 @@
 package devdrawdriver
 
 import (
-	"fmt"
+	//"fmt"
 	"golang.org/x/exp/shiny/screen"
 	"image"
 	"image/color"
@@ -51,22 +51,16 @@ func (u *uploadImpl) Upload(dp image.Point, src screen.Buffer, sr image.Rectangl
 func (u *uploadImpl) Fill(dr image.Rectangle, src color.Color, op draw.Op) {
 	// create a new buffer with the appropriate colour and the appropriate
 	// size.
-//u.ctl.sendMessage('D', []byte{1})
 	rect := image.Rectangle{image.ZP, dr.Size()}
 	fillID := u.ctl.AllocBuffer(0, true, image.Rectangle{image.Point{0, 0}, image.Point{1, 1}}, rect, src)
 	// we need a mask with the same shape, but a solid alpha channel.
-	maskID := u.ctl.AllocBuffer(0, true, image.Rectangle{image.ZP, image.Point{1,1}}, rect, color.Black)
+	maskID := u.ctl.AllocBuffer(0, true, image.Rectangle{image.ZP, image.Point{1, 1}}, rect, color.Black)
 	defer u.ctl.FreeID(maskID)
 	defer u.ctl.FreeID(fillID)
-	//u.resources = append(u.resources, fillID)
 
-print("fillID", fillID)
 	// then draw it on top of this image.
 	u.ctl.SetOp(op)
-fmt.Printf("Drawing Over %d with %d at %s", u.imageId, fillID, dr)
-//	u.ctl.Draw(uint32(u.imageId), fillID, fillID, dr, image.ZP, image.ZP)
 	u.ctl.Draw(uint32(u.imageId), fillID, maskID, dr, image.ZP, image.ZP)
-//u.ctl.sendMessage('D', []byte{0})
 }
 
 func newUploadImpl(s *screenImpl, size image.Rectangle, c color.Color) *uploadImpl {

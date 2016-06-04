@@ -267,7 +267,7 @@ func (d *DrawCtrler) Draw(dstid, srcid, maskid uint32, r image.Rectangle, srcp, 
 func getLargestPrefix(pix []byte, idx int) (uint16, uint8) {
 	var candidateIdx uint16
 	var candidateSize uint8
-	for i := int(idx - 34); i >= 0 && (idx-i < 1024); i-- {
+	for i := int(idx - 34); i >= 0 && (idx-i < 128); i-- {
 		if pix[i] == pix[idx] {
 			if idx+34 >= len(pix) {
 				break
@@ -390,7 +390,7 @@ func (d *DrawCtrler) compressedReplaceSubimage(dstid uint32, r image.Rectangle, 
 		rowStart := i * 4 * rSize.X
 		linePixels := pixels[rowStart : rowStart+(rSize.X*4)]
 		compressedLine := compress(linePixels)
-		if len(compressed)+len(compressedLine) > 6000 || i == rSize.Y-i {
+		if len(compressed)+len(compressedLine) >= d.iounitSize || i == rSize.Y-1 {
 			// construct the message for /dev/draw/data
 			msg := make([]byte, 20+len(compressed))
 			binary.LittleEndian.PutUint32(msg[0:], dstid)

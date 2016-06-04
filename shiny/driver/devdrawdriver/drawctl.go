@@ -257,18 +257,98 @@ func (d *DrawCtrler) Draw(dstid, srcid, maskid uint32, r image.Rectangle, srcp, 
 	d.sendMessage('d', msg)
 }
 
-func getLargestPrefix([]byte) (idx, size uint32) {
-	// TODO: Implement
+// Gets index and size of the largest prefix of pix[idx] which occurs
+// before it in pix. If it doesn't find a prefix of at least size 3,
+// it will claim it couldn't find any, and if it finds one of size 34,
+// it will claim that's the largest that it found since that's the range
+// that fits in a compressed image.
+// It will search at most 1024 offsets back. If it doesn't find anything,
+// it will return 0, 0 indicating that bytes should just be encoded directly.
+func getLargestPrefix(pix []byte, idx int) (uint16, uint8) {
+	var candidateIdx uint16
+	var candidateSize uint8
+	for i := int(idx - 34); i >= 0 && (idx-i < 1024); i-- {
+		if pix[i] == pix[idx] {
+			if idx+34 >= len(pix) {
+				break
+			}
+			for j, val := range pix[idx : idx+34] {
+				if i+j >= len(pix) {
+					break
+				}
+				//fmt.Printf("j: %d %x %x\n", j, val, pix[i+j])
+				if val == pix[i+j] {
+					//fmt.Printf("i+j: %d j: %d val:%x pix[i+j]: %x\n", i+j, j, val, pix[i+j])
+
+					if j > int(candidateSize) {
+						candidateSize = uint8(j)
+						candidateIdx = uint16(i)
+					}
+				} else {
+					break
+				}
+				if candidateSize == 34 {
+					return candidateIdx, candidateSize
+				}
+
+			}
+		}
+	}
+	if candidateSize > 2 {
+		return candidateIdx, candidateSize
+	}
 	return 0, 0
 }
 func compress(pix []byte) []byte {
 	val := make([]byte, 0)
 	for i := 0; i < len(pix); {
-		if idx, size := getLargestPrefix(pix); size > 2 {
+		if idx, size := getLargestPrefix(pix, i); size > 2 {
+			// "If the high-order bit is zero, the next 5 bits encode the
+			//  length of a substring copied from previous pixels. Values
+			//  from 0 to 31 encode lengths from 3 to 34. The bottom
+			//  two bits of the first byte and the 8 bits of the next byte
+			//  encode an offset backward from the current position in the
+			//  pixel data at which the copy is to be found. Values from
+			//  0 to 1023 encode offsets from 1 to 1024."
+			//fmt.Printf("Hack at %d\n", idx)
+			// hack to see if it crashes
+			//	fmt.Printf("Encoding %d bytes\n", int(size))
+
+			var encoding [2]byte
+
+			// encode the length
+			encoding[0] = (size - 3) << 2
+
+			// encode the offset
+			encodedOffset := uint16(i-int(idx)) - 1
+			encoding[0] |= byte((encodedOffset & 0x0300) >> 8)
+			encoding[1] = byte(encodedOffset & 0x00FF)
+			/*
+			   			// Convert from an absolute index into pix to a negative offset from
+			   			// i, and subtract one to convert it to the encoding format.
+			   fmt.Printf("i:%d idx: %d i-idx: %d uint16 i-idx: %d\n", i, idx, i-int(idx), uint16(i-int(idx)))
+			   			encodedOffset := uint16(i-int(idx))-1
+			   			// encode the offset
+			   			encoding[0] |= byte((encodedOffset&0x0300) >> 8)
+			   			encoding[1] = byte(encodedOffset&0x00FF)
+
+			   			fmt.Printf("val from i: % x idx: % x\n", pix[i:i+int(size)], pix[idx:idx+uint16(size)])
+			   			fmt.Printf("% x i:%d idx:%d size:%d EncodedOffset: %d encoding: %x\n", encoding, i, idx, size, encodedOffset, encoding)
+			*/val = append(val, encoding[:]...)
+
+			i += int(size)
 			// TODO: Implement the actual compression here.
-			fmt.Printf("Should be putting %d from %d\n", idx, size)
+			//fmt.Printf("Should be putting %d from %d\n", idx, size)
 		} else {
-			// Just copy a bunch of bytes
+			// "In a code whose first byte has the high-order bit set, the rest
+			//  of the byte encodes the length of  length of a  byte encoded
+			// directly. Values from 0 to 127 encode lengths from 1 to 128
+			// bytes. Subsequent bytes are the literal pixel data."
+			//
+			// If there were no matches, we just add as much data
+			// as we can in order to give the next bit a better
+			// chance of finding something to match again.
+			// This should probably be more intelligent.
 			if left := len(pix) - i; left >= 128 {
 				val = append(val, 0xFF)
 				val = append(val, pix[i:i+128]...)
@@ -302,7 +382,7 @@ func (d *DrawCtrler) compressedReplaceSubimage(dstid uint32, r image.Rectangle, 
 
 	blockYStart := 0
 	rSize := r.Size()
-	maxCompressed := 0
+
 	compressed := make([]byte, 0)
 	// use rSize instead of r.Min.Y to make indexing into pixels easier.
 	for i := 0; i < rSize.Y; i += 1 {
@@ -310,7 +390,7 @@ func (d *DrawCtrler) compressedReplaceSubimage(dstid uint32, r image.Rectangle, 
 		rowStart := i * 4 * rSize.X
 		linePixels := pixels[rowStart : rowStart+(rSize.X*4)]
 		compressedLine := compress(linePixels)
-		if maxCompressed+len(compressedLine) > 6000 {
+		if len(compressed)+len(compressedLine) > 6000 || i == rSize.Y-i {
 			// construct the message for /dev/draw/data
 			msg := make([]byte, 20+len(compressed))
 			binary.LittleEndian.PutUint32(msg[0:], dstid)
@@ -319,17 +399,14 @@ func (d *DrawCtrler) compressedReplaceSubimage(dstid uint32, r image.Rectangle, 
 			binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
 			binary.LittleEndian.PutUint32(msg[16:], uint32(r.Min.Y+i))
 			copy(msg[20:], compressed)
-			fmt.Printf("Sending with Y (%d, %d)-(%d,%d) -> %d\n", r.Min.X, r.Min.Y+blockYStart, r.Max.X, r.Min.Y+i-1, len(compressed))
+			//fmt.Printf("Sending with Y (%d, %d)-(%d,%d) -> %d not %d\n", r.Min.X, r.Min.Y+blockYStart, r.Max.X, r.Min.Y+i-1, len(compressed), (i-blockYStart)*rSize.X*4)
 			d.sendMessage('Y', msg)
 
 			// keep track of information for the next message
 			blockYStart = i
 			compressed = compressedLine //make([]byte, 6000)
-			maxCompressed = 0
-			// send the 'Y' message
 		} else {
 			compressed = append(compressed, compressedLine...)
-			maxCompressed += len(compressedLine)
 		}
 
 	}

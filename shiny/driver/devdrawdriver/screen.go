@@ -14,10 +14,13 @@ import (
 	"io/ioutil"
 )
 
+type screenId uint32
+
 type screenImpl struct {
 	// the active shiny window
 	w *windowImpl
 
+	screenId screenId
 	// the reference to /dev/draw/N/data to send
 	// messages to
 	ctl *DrawCtrler
@@ -48,32 +51,39 @@ func (s *screenImpl) NewWindow(opts *screen.NewWindowOptions) (screen.Window, er
 	return w, nil
 }
 
+func (s *screenImpl) release() {
+	if s == nil || s.ctl == nil {
+		return
+	}
+	s.ctl.FreeScreen(s.screenId)
+}
 func newScreenImpl() (*screenImpl, error) {
 	ctrl, _, err := NewDrawCtrler()
 	if err != nil {
 		return nil, fmt.Errorf("new controller: %v", err)
 	}
 
-	// makes ID 0x0001 refer to the same image as /dev/winname on this process.
+	// makes image ID 0 refer to the same image as /dev/winname on this process.
 	ctrl.sendMessage('n', attachWindow())
-	// create a new screen for us to use
-	ctrl.sendMessage('A', []byte{
-		0, 1, 0, 0, // create a screen with an arbitrary id
-		0, 0, 0, 0, // backed by the current window
-		0, 0, 0, 0, // filled with the same image
-		0, // and make it public, because why not
-	})
+
+	sId, err := ctrl.AllocScreen()
+	if err != nil {
+		return nil, err
+	}
+
 	return &screenImpl{
-		ctl:     ctrl,
-		windows: make([]windowId, 0),
+		ctl:      ctrl,
+		windows:  make([]windowId, 0),
+		screenId: sId,
 	}, nil
 }
 
 // moves the current shiny windows to be overlaid on the current plan9 window
 // frame.
 func repositionWindow(s *screenImpl, r image.Rectangle) {
-	// reattach the window after a resize event
-	s.ctl.sendMessage('f', []byte{0, 0, 0, 1})
+	// reattach the window after a resize event. We always attach id 0
+	// to the current window.
+	s.ctl.sendMessage('f', []byte{0, 0, 0, 0})
 	s.ctl.sendMessage('n', attachWindow())
 
 	args := make([]byte, 20)
@@ -87,7 +97,8 @@ func repositionWindow(s *screenImpl, r image.Rectangle) {
 	for _, winId := range s.windows {
 		binary.LittleEndian.PutUint32(args[0:], uint32(winId))
 		s.ctl.sendMessage('o', args)
-		//	s.ctl.Reclip(uint32(winId), false, r)
+
+		s.ctl.Reclip(uint32(winId), false, image.Rectangle{image.ZP, r.Size()})
 		//s.ctl.Reclip(uint32(winId), false, r)
 	}
 }
@@ -96,9 +107,6 @@ func repositionWindow(s *screenImpl, r image.Rectangle) {
 // attached to
 func redrawWindow(s *screenImpl, r image.Rectangle) {
 	args := make([]byte, 44)
-
-	// 0, 0, 0, 1 is the attached window that we're drawing on.
-	args[3] = 1
 
 	// the rectangle clipping rectangle
 	binary.LittleEndian.PutUint32(args[12:], uint32(r.Min.X))
@@ -127,7 +135,6 @@ func attachWindow() []byte {
 		panic(err)
 	}
 	buf := make([]byte, 4+1+len(winname))
-	buf[3] = 1
 	buf[4] = byte(len(winname))
 	copy(buf[5:], winname)
 	return buf

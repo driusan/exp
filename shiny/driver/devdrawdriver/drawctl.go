@@ -3,6 +3,7 @@ package devdrawdriver
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"sync"
 )
+
+var NoScreen error = errors.New("Could not allocate screen")
 
 // A DrawCtrler is an object which holds references to
 // /dev/draw/n/^(data ctl), and allows you to send or
@@ -142,9 +145,6 @@ func (d DrawCtrler) readCtlString(f io.Reader) string {
 func (d DrawCtrler) sendMessage(cmd byte, val []byte) error {
 	realCmd := append([]byte{cmd}, val...)
 	_, err := d.data.Write(realCmd)
-	if err != nil {
-		panic(err)
-	}
 	return err
 }
 
@@ -153,6 +153,27 @@ func (d DrawCtrler) sendMessage(cmd byte, val []byte) error {
 func (d DrawCtrler) sendCtlMessage(val []byte) error {
 	_, err := d.ctl.Write(val)
 	return err
+}
+
+// Allocates a new screen and returns either the ID for
+// the screen, or a NoScreen error.
+func (d *DrawCtrler) AllocScreen() (screenId, error) {
+	msg := make([]byte, 13)
+	for i := 0; i < 255; i++ {
+		binary.LittleEndian.PutUint32(msg[0:], uint32(i))
+		err := d.sendMessage('A', msg)
+		if err == nil {
+			return screenId(i), nil
+		}
+	}
+	return 0, NoScreen
+}
+
+// Frees the screen identified by id.
+func (d *DrawCtrler) FreeScreen(id screenId) {
+	msg := make([]byte, 4)
+	binary.LittleEndian.PutUint32(msg, uint32(id))
+	d.sendMessage('F', msg)
 }
 
 // AllocBuffer will send a message to /dev/draw/N/data of the form:
@@ -197,8 +218,11 @@ func (d *DrawCtrler) AllocBuffer(refresh byte, repl bool, r, clipr image.Rectang
 	// color.RGBA() returns a uint16 (actually a uint32
 	// with only the lower 16 bits set), so shift it to
 	// convert it to a uint8.
+	// Note that there's a bug in libmemdraw in the standard Plan 9
+	// distribution that the endianness is swapped, but we don't do anything
+	// about it here because that would break drawterm, 9front, or anything
+	// else where it's implemented according to the spec..
 	rd, g, b, a := color.RGBA()
-	//	rd, g, b, _ := color.RGBA()
 	msg[46] = byte(a >> 8)
 	msg[47] = byte(b >> 8)
 	msg[48] = byte(g >> 8)
@@ -268,127 +292,16 @@ func (d *DrawCtrler) Draw(dstid, srcid, maskid uint32, r image.Rectangle, srcp, 
 	d.sendMessage('d', msg)
 }
 
-// Gets index and size of the largest prefix of pix[idx] which occurs
-// before it in pix. If it doesn't find a prefix of at least size 3,
-// it will claim it couldn't find any, and if it finds one of size 34,
-// it will claim that's the largest that it found since that's the range
-// that fits in a compressed image.
-// It will search at most 1024 offsets back. If it doesn't find anything,
-// it will return 0, 0 indicating that bytes should just be encoded directly.
-func getLargestPrefix(pix []byte, idx int) (uint16, uint8) {
-	var candidateIdx uint16
-	var candidateSize uint8
-	for i := int(idx - 34); i >= 0 && (idx-i < 128); i-- {
-		if pix[i] == pix[idx] {
-			if idx+34 >= len(pix) {
-				break
-			}
-			for j, val := range pix[idx : idx+34] {
-				if i+j >= len(pix) {
-					break
-				}
-				//fmt.Printf("j: %d %x %x\n", j, val, pix[i+j])
-				if val == pix[i+j] {
-					//fmt.Printf("i+j: %d j: %d val:%x pix[i+j]: %x\n", i+j, j, val, pix[i+j])
-
-					if j > int(candidateSize) {
-						candidateSize = uint8(j)
-						candidateIdx = uint16(i)
-					}
-				} else {
-					break
-				}
-				if candidateSize == 34 {
-					return candidateIdx, candidateSize
-				}
-
-			}
-		}
-	}
-	if candidateSize > 2 {
-		return candidateIdx, candidateSize
-	}
-	return 0, 0
-}
-func compress(pix []byte) []byte {
-	val := make([]byte, 0)
-	for i := 0; i < len(pix); {
-		if idx, size := getLargestPrefix(pix, i); size > 2 {
-			// "If the high-order bit is zero, the next 5 bits encode the
-			//  length of a substring copied from previous pixels. Values
-			//  from 0 to 31 encode lengths from 3 to 34. The bottom
-			//  two bits of the first byte and the 8 bits of the next byte
-			//  encode an offset backward from the current position in the
-			//  pixel data at which the copy is to be found. Values from
-			//  0 to 1023 encode offsets from 1 to 1024."
-			//fmt.Printf("Hack at %d\n", idx)
-			// hack to see if it crashes
-			//	fmt.Printf("Encoding %d bytes\n", int(size))
-
-			var encoding [2]byte
-
-			// encode the length
-			encoding[0] = (size - 3) << 2
-
-			// encode the offset
-			encodedOffset := uint16(i-int(idx)) - 1
-			encoding[0] |= byte((encodedOffset & 0x0300) >> 8)
-			encoding[1] = byte(encodedOffset & 0x00FF)
-			/*
-			   			// Convert from an absolute index into pix to a negative offset from
-			   			// i, and subtract one to convert it to the encoding format.
-			   fmt.Printf("i:%d idx: %d i-idx: %d uint16 i-idx: %d\n", i, idx, i-int(idx), uint16(i-int(idx)))
-			   			encodedOffset := uint16(i-int(idx))-1
-			   			// encode the offset
-			   			encoding[0] |= byte((encodedOffset&0x0300) >> 8)
-			   			encoding[1] = byte(encodedOffset&0x00FF)
-
-			   			fmt.Printf("val from i: % x idx: % x\n", pix[i:i+int(size)], pix[idx:idx+uint16(size)])
-			   			fmt.Printf("% x i:%d idx:%d size:%d EncodedOffset: %d encoding: %x\n", encoding, i, idx, size, encodedOffset, encoding)
-			*/val = append(val, encoding[:]...)
-
-			i += int(size)
-			// TODO: Implement the actual compression here.
-			//fmt.Printf("Should be putting %d from %d\n", idx, size)
-		} else {
-			// "In a code whose first byte has the high-order bit set, the rest
-			//  of the byte encodes the length of  length of a  byte encoded
-			// directly. Values from 0 to 127 encode lengths from 1 to 128
-			// bytes. Subsequent bytes are the literal pixel data."
-			//
-			// If there were no matches, we just add as much data
-			// as we can in order to give the next bit pixel a better
-			// chance of finding something to match against.
-			if left := len(pix) - i; left >= 128 {
-				val = append(val, 0xFF)
-				val = append(val, pix[i:i+128]...)
-
-				i += 128
-			} else {
-				val = append(val, (0x80 | byte(left-1)))
-				val = append(val, pix[i:i+left]...)
-
-				i += left
-			}
-		}
-
-	}
-	return val
-}
-
 // Implements the compression format described in image(6) for use in
-// 'Y' messages.
+// 'Y' messages if the /dev/draw driver isn't libmemdraw.
 func (d *DrawCtrler) compressedReplaceSubimage(dstid uint32, r image.Rectangle, pixels []byte) {
-	// "A compression block begins with two decimal strings of twelve bytes each. The first
-	// number is one more than the y coordinate of the last row of the block. The second
-	// is the number of bytes of compressed data in the block, not including the
-	// two decimal strings. This number must not be larger than 6000.
-	//
-	// Pixels are encoding using a version of Lempel & Ziv's sliging window scheme LZ77."
+	// "Pixels are encoding using a version of Lempel & Ziv's sliging window scheme LZ77."
+	// We don't care about the rest of image(6), because we're not using the image format,
+	// just the same LZ77 compression.
 
 	// There's 4 bytes per pixel in an RGBA, so for each iteration compress
-	// rSize.X*4 = 1 line of data, check if it's over 6000, send the Y message
-	// if so.
+	// rSize.X*4 = 1 line of data, check if it's over the iounit size, and send
+	// the Y message before appending it if so.
 
 	blockYStart := 0
 	rSize := r.Size()
@@ -400,6 +313,9 @@ func (d *DrawCtrler) compressedReplaceSubimage(dstid uint32, r image.Rectangle, 
 		rowStart := i * 4 * rSize.X
 		linePixels := pixels[rowStart : rowStart+(rSize.X*4)]
 		compressedLine := compress(linePixels)
+		// Note that even though image(6) says the compression format should be less
+		// than 6000 to fit in a 9p unit, we're actually just using the lz77 compression
+		// described. We know the iounitSize, so use it as the cutoff.
 		if len(compressed)+len(compressedLine) >= d.iounitSize || i == rSize.Y-1 {
 			// construct the message for /dev/draw/data
 			msg := make([]byte, 20+len(compressed))
@@ -433,10 +349,11 @@ func (d *DrawCtrler) ReplaceSubimage(dstid uint32, r image.Rectangle, pixels []b
 	// maximum iounit size if it doesn't fit in 1 message.
 	if d.iounitSize < 65535 && len(pixels) > 256 {
 		// the in-memory /dev/draw driver has an iounit size of 65535. If it's less than
-		// that, it's because it's a remote implementation with some overhead somewhere.
+		// that, it's probably because it's a remote implementation with some overhead
+		// somewhere.
 		// In that case, use the compresssed 'Y' form instead and skip this.
-		// Don't other with small images, because the overhead of the compression will
-		// be worse than the gain. 256 is entirely arbitrary.
+		// Don't bother with small images, because the overhead of the compression will
+		// probably be worse than the gain. 256 is entirely arbitrary.
 		d.compressedReplaceSubimage(dstid, r, pixels)
 		return
 	}
@@ -508,7 +425,7 @@ func (d *DrawCtrler) ReadSubimage(src uint32, r image.Rectangle) []uint8 {
 	// and an Eshortread error.
 	// So, again, split it up into multiple reads and reconstruct
 	// it.
-
+	// There's no compressed variant for 'r'.
 	binary.LittleEndian.PutUint32(msg[0:], src)
 	binary.LittleEndian.PutUint32(msg[4:], uint32(r.Min.X))
 	binary.LittleEndian.PutUint32(msg[12:], uint32(r.Max.X))
@@ -531,6 +448,8 @@ func (d *DrawCtrler) ReadSubimage(src uint32, r image.Rectangle) []uint8 {
 	return pixels
 }
 
+// Resizes dstid to be bound by r and changes the repl bit to
+// repl. This is mostly used when a window is resized.
 func (d *DrawCtrler) Reclip(dstid uint32, repl bool, r image.Rectangle) {
 	msg := make([]byte, 21)
 

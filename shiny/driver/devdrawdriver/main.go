@@ -39,6 +39,7 @@ func Main(f func(s screen.Screen)) {
 		// exits
 		f(s)
 		doneChan <- true
+		s.release()
 	}()
 
 	go mouseEventHandler(mouseEvent, s)

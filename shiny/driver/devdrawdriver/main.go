@@ -41,7 +41,7 @@ func Main(f func(s screen.Screen)) {
 		doneChan <- true
 	}()
 
-	go mouseEventHandler(mouseEvent)
+	go mouseEventHandler(mouseEvent, s)
 	go keyboardEventHandler(keyboardEvent)
 	for {
 		select {

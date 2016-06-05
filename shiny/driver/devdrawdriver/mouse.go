@@ -7,6 +7,9 @@ package devdrawdriver
 import (
 	"fmt"
 	"golang.org/x/mobile/event/mouse"
+	"golang.org/x/mobile/event/paint"
+	"golang.org/x/mobile/event/size"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -32,7 +35,7 @@ const (
 // are passed along the notifier channel to be added to the shiny event
 // queue.
 // BUG: This doesn't handle the 'r' message type yet.
-func mouseEventHandler(notifier chan *mouse.Event) {
+func mouseEventHandler(notifier chan *mouse.Event, s *screenImpl) {
 	mouseEvent, err := os.Open("/dev/mouse")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not open mouse driver.\n")
@@ -50,58 +53,82 @@ func mouseEventHandler(notifier chan *mouse.Event) {
 			continue
 
 		}
-		if mouseMessage[0] != 'm' || mouseMessage[12] != ' ' {
-			fmt.Fprintf(os.Stderr, "Unhandled data from /dev/mouse: %s\n", mouseMessage)
-		}
+		switch mouseMessage[0] {
+		case 'r':
+			// Reread the window size the same way that happens on startup.
+			// This is more reliable than the 'r' message, the format of which
+			// isn't documented.
+			windowSize, err := readWctl()
+			if err != nil {
+				log.Fatalf("read current window size: %v\n", err)
+			}
 
-		// /dev/mouse prints an ASCII integer number, but x/mobile/event/mouse.Event
-		// expects a float32, so we just parse it as a float32.
-		x, err := strconv.ParseFloat(strings.TrimSpace(string(mouseMessage[1:12])), 32)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Unexpected data from the mouse. Could not parse X coordinate.\n")
-			continue
-		}
-		y, err := strconv.ParseFloat(strings.TrimSpace(string(mouseMessage[13:24])), 32)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Unexpected data from the mouse. Could not parse Y coordinate.\n")
-			continue
-		}
+			s.windowFrame = windowSize
+			repositionWindow(s, s.windowFrame)
+			if s.w != nil {
+				sz := s.windowFrame.Size()
+				// tell the window it's current size before doing anything.
+				s.w.Queue.Send(size.Event{WidthPx: sz.X, HeightPx: sz.Y})
+				// and after it knows the size, tell the program using it to paint.
+				s.w.Queue.Send(paint.Event{})
+			}
 
-		btnMaskInt, err := strconv.Atoi(strings.TrimSpace(string(mouseMessage[25:36])))
-		buttons := ButtonMask(btnMaskInt)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Unexpected data from the mouse. Could not parse button mask.\n")
-			continue
-		}
+		case 'm':
+			if mouseMessage[12] != ' ' {
+				fmt.Fprintf(os.Stderr, "Unhandled data from /dev/mouse: %s\n", mouseMessage)
+			}
 
-		var btn mouse.Button
+			// /dev/mouse prints an ASCII integer number, but x/mobile/event/mouse.Event
+			// expects a float32, so we just parse it as a float32.
+			x, err := strconv.ParseFloat(strings.TrimSpace(string(mouseMessage[1:12])), 32)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Unexpected data from the mouse. Could not parse X coordinate.\n")
+				continue
+			}
+			y, err := strconv.ParseFloat(strings.TrimSpace(string(mouseMessage[13:24])), 32)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Unexpected data from the mouse. Could not parse Y coordinate.\n")
+				continue
+			}
 
-		// Convert the Plan9 button mask to a event.Mouse button.
-		switch {
-		case (buttons & MouseButtonLeft) != 0:
-			btn = mouse.ButtonLeft
-		case (buttons & MouseButtonMiddle) != 0:
-			btn = mouse.ButtonMiddle
-		case (buttons & MouseButtonRight) != 0:
-			btn = mouse.ButtonRight
-		case (buttons & MouseScrollUp) != 0:
-			btn = mouse.ButtonWheelUp
-		case (buttons & MouseScrollDown) != 0:
-			btn = mouse.ButtonWheelDown
+			btnMaskInt, err := strconv.Atoi(strings.TrimSpace(string(mouseMessage[25:36])))
+			buttons := ButtonMask(btnMaskInt)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Unexpected data from the mouse. Could not parse button mask.\n")
+				continue
+			}
+
+			var btn mouse.Button
+
+			// Convert the Plan9 button mask to a event.Mouse button.
+			switch {
+			case (buttons & MouseButtonLeft) != 0:
+				btn = mouse.ButtonLeft
+			case (buttons & MouseButtonMiddle) != 0:
+				btn = mouse.ButtonMiddle
+			case (buttons & MouseButtonRight) != 0:
+				btn = mouse.ButtonRight
+			case (buttons & MouseScrollUp) != 0:
+				btn = mouse.ButtonWheelUp
+			case (buttons & MouseScrollDown) != 0:
+				btn = mouse.ButtonWheelDown
+			default:
+				btn = mouse.ButtonNone
+			}
+
+			var dir mouse.Direction = mouseDirection(previousEvent.Button, btn)
+			newEvent := mouse.Event{
+				X:         float32(x),
+				Y:         float32(y),
+				Button:    btn,
+				Modifiers: currentModifiers,
+				Direction: dir,
+			}
+			notifier <- &newEvent
+			previousEvent = newEvent
 		default:
-			btn = mouse.ButtonNone
+			fmt.Fprintf(os.Stderr, "Unhandled mouse event: %s\n", mouseMessage)
 		}
-
-		var dir mouse.Direction = mouseDirection(previousEvent.Button, btn)
-		newEvent := mouse.Event{
-			X:         float32(x),
-			Y:         float32(y),
-			Button:    btn,
-			Modifiers: currentModifiers,
-			Direction: dir,
-		}
-		notifier <- &newEvent
-		previousEvent = newEvent
 	}
 }
 

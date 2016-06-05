@@ -45,7 +45,7 @@ func mouseEventHandler(notifier chan *mouse.Event, s *screenImpl) {
 
 	mouseMessage := make([]byte, 100)
 	// used to determine if it's an up or a down direction
-	var previousEvent mouse.Event
+	var prevmask ButtonMask
 	for {
 		_, err := mouseEvent.Read(mouseMessage)
 		if err != nil {
@@ -98,52 +98,130 @@ func mouseEventHandler(notifier chan *mouse.Event, s *screenImpl) {
 				continue
 			}
 
-			var btn mouse.Button
-
 			// Convert the Plan9 button mask to a event.Mouse button.
-			switch {
-			case (buttons & MouseButtonLeft) != 0:
-				btn = mouse.ButtonLeft
-			case (buttons & MouseButtonMiddle) != 0:
-				btn = mouse.ButtonMiddle
-			case (buttons & MouseButtonRight) != 0:
-				btn = mouse.ButtonRight
-			case (buttons & MouseScrollUp) != 0:
-				btn = mouse.ButtonWheelUp
-			case (buttons & MouseScrollDown) != 0:
-				btn = mouse.ButtonWheelDown
-			default:
-				btn = mouse.ButtonNone
+			// It would be nice if this could be a switch statement, but multiple
+			// cases would potentially need to match, so instead just set a bool
+			// to track if any button changed, and send a none event if it doesn't
+			// get triggered.
+			sentEvt := false
+
+			// Left click
+			if (buttons&MouseButtonLeft) != 0 && (prevmask&MouseButtonLeft) == 0 {
+				notifier <- &mouse.Event{
+					X:         float32(x),
+					Y:         float32(y),
+					Button:    mouse.ButtonLeft,
+					Direction: mouse.DirPress,
+				}
+				sentEvt = true
+			}
+			// Left release
+			if (buttons&MouseButtonLeft) == 0 && (prevmask&MouseButtonLeft) != 0 {
+				notifier <- &mouse.Event{
+					X:         float32(x),
+					Y:         float32(y),
+					Button:    mouse.ButtonLeft,
+					Direction: mouse.DirRelease,
+				}
+				sentEvt = true
 			}
 
-			var dir mouse.Direction = mouseDirection(previousEvent.Button, btn)
-			newEvent := mouse.Event{
-				X:         float32(x),
-				Y:         float32(y),
-				Button:    btn,
-				Modifiers: currentModifiers,
-				Direction: dir,
+			// Middle click
+			if (buttons&MouseButtonMiddle) != 0 && (prevmask&MouseButtonMiddle) == 0 {
+				notifier <- &mouse.Event{
+					X:         float32(x),
+					Y:         float32(y),
+					Button:    mouse.ButtonMiddle,
+					Direction: mouse.DirPress,
+				}
+				sentEvt = true
 			}
-			notifier <- &newEvent
-			previousEvent = newEvent
+			// Middle release
+			if (buttons&MouseButtonMiddle) == 0 && (prevmask&MouseButtonMiddle) != 0 {
+				notifier <- &mouse.Event{
+					X:         float32(x),
+					Y:         float32(y),
+					Button:    mouse.ButtonMiddle,
+					Direction: mouse.DirRelease,
+				}
+				sentEvt = true
+			}
+
+			// Right click
+			if (buttons&MouseButtonRight) != 0 && (prevmask&MouseButtonRight) == 0 {
+				notifier <- &mouse.Event{
+					X:         float32(x),
+					Y:         float32(y),
+					Button:    mouse.ButtonRight,
+					Direction: mouse.DirPress,
+				}
+				sentEvt = true
+			}
+			// Right release
+			if (buttons&MouseButtonRight) == 0 && (prevmask&MouseButtonRight) != 0 {
+				notifier <- &mouse.Event{
+					X:         float32(x),
+					Y:         float32(y),
+					Button:    mouse.ButtonRight,
+					Direction: mouse.DirRelease,
+				}
+				sentEvt = true
+			}
+
+			// WheelUp start
+			if (buttons&MouseScrollUp) != 0 && (prevmask&MouseScrollUp) == 0 {
+				notifier <- &mouse.Event{
+					X:         float32(x),
+					Y:         float32(y),
+					Button:    mouse.ButtonWheelUp,
+					Direction: mouse.DirPress,
+				}
+				sentEvt = true
+			}
+			// WheelUp end
+			if (buttons&MouseScrollUp) == 0 && (prevmask&MouseScrollUp) != 0 {
+				notifier <- &mouse.Event{
+					X:         float32(x),
+					Y:         float32(y),
+					Button:    mouse.ButtonWheelUp,
+					Direction: mouse.DirRelease,
+				}
+				sentEvt = true
+			}
+			// WheelDown start
+			if (buttons&MouseScrollDown) != 0 && (prevmask&MouseScrollDown) == 0 {
+				notifier <- &mouse.Event{
+					X:         float32(x),
+					Y:         float32(y),
+					Button:    mouse.ButtonWheelDown,
+					Direction: mouse.DirPress,
+				}
+				sentEvt = true
+			}
+			// WheelDown end
+			if (buttons&MouseScrollDown) == 0 && (prevmask&MouseScrollDown) != 0 {
+				notifier <- &mouse.Event{
+					X:         float32(x),
+					Y:         float32(y),
+					Button:    mouse.ButtonWheelDown,
+					Direction: mouse.DirRelease,
+				}
+				sentEvt = true
+			}
+
+			// Default. The mouse moved without any buttons changing state.
+			if sentEvt == false {
+				notifier <- &mouse.Event{
+					X:         float32(x),
+					Y:         float32(y),
+					Button:    mouse.ButtonNone,
+					Direction: mouse.DirNone,
+				}
+			}
+
+			prevmask = buttons
 		default:
 			fmt.Fprintf(os.Stderr, "Unhandled mouse event: %s\n", mouseMessage)
 		}
 	}
-}
-
-// mouseDirection calculates the direction of the button press by comparing
-// the previous button to this one.
-func mouseDirection(prev mouse.Button, cur mouse.Button) mouse.Direction {
-	if prev == cur {
-		return mouse.DirNone
-	} else {
-		if prev == mouse.ButtonNone {
-			return mouse.DirPress
-		}
-		if cur == mouse.ButtonNone {
-			return mouse.DirRelease
-		}
-	}
-	return mouse.DirNone
 }

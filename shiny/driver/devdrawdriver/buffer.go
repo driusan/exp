@@ -15,6 +15,7 @@ type bufferImpl struct {
 }
 
 func (b *bufferImpl) Release() {
+	b.i = nil
 	// the image will get garbage collected
 }
 

@@ -91,28 +91,61 @@ func RuneToCode(r rune) (key.Code, key.Modifiers) {
 
 	// then handle the rest
 	switch r {
-	// the key.Event keycode codes aren't sequential for the number
-	// keys, so handle these specially
+	// Number row. Assume they came from the numbers and not the numpad, because for
+	// all we know the keyboard being used doesn't even have a numpad
+	case '`':
+		return key.CodeGraveAccent, 0
+	case '~':
+		return key.CodeGraveAccent, key.ModShift
 	case '0':
 		return key.Code0, 0
+	case ')':
+		return key.Code0, key.ModShift
 	case '1':
 		return key.Code1, 0
+	case '!':
+		return key.Code1, key.ModShift
 	case '2':
 		return key.Code2, 0
+	case '@':
+		return key.Code2, key.ModShift
 	case '3':
 		return key.Code3, 0
+	case '#':
+		return key.Code3, key.ModShift
 	case '4':
 		return key.Code4, 0
+	case '$':
+		return key.Code4, key.ModShift
 	case '5':
 		return key.Code5, 0
+	case '%':
+		return key.Code5, key.ModShift
 	case '6':
 		return key.Code6, 0
+	case '^':
+		return key.Code6, key.ModShift
 	case '7':
 		return key.Code7, 0
+	case '&':
+		return key.Code7, key.ModShift
 	case '8':
 		return key.Code8, 0
+	case '*':
+		return key.Code8, key.ModShift
 	case '9':
 		return key.Code9, 0
+	case '(':
+		return key.Code9, key.ModShift
+	case '-':
+		return key.CodeHyphenMinus, 0
+	case '_':
+		return key.CodeHyphenMinus, key.ModShift
+	case '=':
+		return key.CodeEqualSign, 0
+	case '+':
+		return key.CodeEqualSign, key.ModShift
+	// other special characters
 	case 27:
 		return key.CodeEscape, 0
 	case '\n':
@@ -123,28 +156,41 @@ func RuneToCode(r rune) (key.Code, key.Modifiers) {
 		return key.CodeTab, 0
 	case ' ':
 		return key.CodeSpacebar, 0
-	case '-':
-		return key.CodeHyphenMinus, 0
-	case '=':
-		return key.CodeEqualSign, 0
 	case '[':
 		return key.CodeLeftSquareBracket, 0
 	case ']':
 		return key.CodeRightSquareBracket, 0
-	case '\\':
+	case '{':
+		return key.CodeLeftSquareBracket, key.ModShift
+	case '}':
+		return key.CodeRightSquareBracket, key.ModShift
+	case `\`:
 		return key.CodeBackslash, 0
+	case '|':
+		return key.CodeBackslash, key.ModShift
+
 	case ';':
 		return key.CodeSemicolon, 0
-	case '\'':
+	case ':':
+		return key.CodeSemicolon, key.ModShift
+	case `'`:
 		return key.CodeApostrophe, 0
+	case `"`:
+		return key.CodeApostrophe, key.ModShift
 	case '`':
 		return key.CodeGraveAccent, 0
 	case ',':
 		return key.CodeComma, 0
+	case '<':
+		return key.CodeComma, key.ModShift
 	case '.':
 		return key.CodeFullStop, 0
+	case '>':
+		return key.CodeFullStop, key.ModShift
 	case '/':
 		return key.CodeSlash, 0
+	case '?':
+		return key.CodeSlash, key.ModShift
 	// Aptly named unicode codepoints.
 	case '\uf001':
 		return key.CodeF1, 0
@@ -183,21 +229,18 @@ func RuneToCode(r rune) (key.Code, key.Modifiers) {
 	case '\uf800':
 		return key.CodeDownArrow, 0
 
-		/*
-		   	TODO: Look up the unicode code point for these other keys in key.Event.
-		   	      We can't go back to the keypad ones because there's no way to tell
-		   	      if the rune came from the keypad or the normal keyboard.
-
-		   	CodePause         Code = 72
-		           CodeInsert        Code = 73
-		           CodeHome          Code = 74
-		           CodePageUp        Code = 75
-		           CodeDeleteForward Code = 76
-		           CodeEnd           Code = 77
-		           CodePageDown      Code = 78
-
-
-		*/
+	case '\uf014':
+		return key.CodeInsert, 0
+	case '\u007f':
+		return key.CodeDeleteForward, 0
+	case '\uf00f':
+		return key.CodePageUp, 0
+	case '\uf013':
+		return key.CodePageDown, 0
+	case '\uf00d':
+		return key.CodeHome, 0
+	case '\uf018':
+		return key.CodeEnd, 0
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown unicode character %d %c %s, %u unsupported by /dev/draw driver.\n", r, r, r, r)
 		return key.CodeUnknown, 0

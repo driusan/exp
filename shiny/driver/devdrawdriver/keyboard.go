@@ -71,11 +71,10 @@ func keyboardEventHandler(notifier chan *key.Event) {
 // that can be assumed to be present on every Plan 9 instance, so even if
 // support is implemented for /dev/kbd this needs to remain here as a fallback.
 //
-// BUG: This only supports ASCII right now, and only supports the shift
-//      modifier. Adding ctrl should be just a matter of looking up
-//	the unicode range for the ctrl-modified runes, and alt isn't possible
-//	because Plan 9 doesn't pass that along /dev/cons (it's used at a lower
-//	level to compose unicode codepoints that get passed to /dev/cons)
+// BUG: This only supports the shift modifier right now. Adding ctrl should be 
+// just a matter of looking up the unicode range for the ctrl-modified runes, 
+// and alt isn't possible because Plan 9 doesn't pass that along /dev/cons (it's 
+// used at a lower level to compose unicode codepoints that get passed to /dev/cons)
 // TODO: Look into using /dev/kbd on 9front.
 func RuneToCode(r rune) (key.Code, key.Modifiers) {
 	// first handle ones that can easily be calculated from the

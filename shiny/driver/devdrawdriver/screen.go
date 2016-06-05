@@ -26,7 +26,8 @@ type screenImpl struct {
 	// onto.
 	windowFrame image.Rectangle
 
-	// list of existing window IDs that have been allocated
+	// list of existing window image IDs that have been allocated, so we know
+	// what to free at the end.
 	windows []windowId
 }
 
@@ -52,9 +53,9 @@ func newScreenImpl() (*screenImpl, error) {
 	if err != nil {
 		return nil, fmt.Errorf("new controller: %v", err)
 	}
-	//fmt.Println(ctrl, msg)
+
 	// makes ID 0x0001 refer to the same image as /dev/winname on this process.
-	ctrl.sendMessage('n', attachscreen())
+	ctrl.sendMessage('n', attachWindow())
 	// create a new screen for us to use
 	ctrl.sendMessage('A', []byte{
 		0, 1, 0, 0, // create a screen with an arbitrary id
@@ -73,7 +74,7 @@ func newScreenImpl() (*screenImpl, error) {
 func repositionWindow(s *screenImpl, r image.Rectangle) {
 	// reattach the window after a resize event
 	s.ctl.sendMessage('f', []byte{0, 0, 0, 1})
-	s.ctl.sendMessage('n', attachscreen())
+	s.ctl.sendMessage('n', attachWindow())
 
 	args := make([]byte, 20)
 	// 0-3 = windowId
@@ -105,20 +106,22 @@ func redrawWindow(s *screenImpl, r image.Rectangle) {
 	binary.LittleEndian.PutUint32(args[20:], uint32(r.Max.X))
 	binary.LittleEndian.PutUint32(args[24:], uint32(r.Max.Y))
 	// source point and mask point are both always 0.
+	s.ctl.drawMu.Lock()
+	defer s.ctl.drawMu.Unlock()
 	for _, winId := range s.windows {
 		// redraw each window id
 		binary.LittleEndian.PutUint32(args[4:], uint32(winId))
 		// use the window itself as a mask, so that it's opaque.
 		// (or at least uses it's own alpha channel)
 		binary.LittleEndian.PutUint32(args[8:], uint32(winId))
-		s.ctl.SetOp(draw.Src)
+		s.ctl.setOp(draw.Src)
 		s.ctl.sendMessage('d', args)
 	}
 	// flush the buffer
 	s.ctl.sendMessage('v', nil)
 }
 
-func attachscreen() []byte {
+func attachWindow() []byte {
 	winname, err := ioutil.ReadFile("/dev/winname")
 	if err != nil {
 		panic(err)

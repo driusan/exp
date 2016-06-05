@@ -5,7 +5,6 @@
 package devdrawdriver
 
 import (
-	"fmt"
 	"golang.org/x/exp/shiny/driver/internal/drawer"
 	"golang.org/x/exp/shiny/driver/internal/event"
 	"golang.org/x/exp/shiny/screen"
@@ -35,22 +34,20 @@ func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectang
 	// 2. Transform into dst space using src2dst
 	// 3. Create a new imageId of the transformed texture
 	// 4. Upload the transformed data to the new ImageId
-	// 3. SetOp
-	// 4. Draw.
+	// 5. Draw.
 
-	// step 0: check if there's no rotation, in which case we don't need to bother.
+	// step 0: Check if there's no rotation, in which case we don't need to bother with
+	// 	the expensive network traffic or CPU matrix multiplication.
+	//         We can just draw the already uploaded texture at the translated location.
 	if src2dst[0] == 1 && src2dst[1] == 0 &&
 		src2dst[3] == 0 && src2dst[4] == 1 {
-		// it's a translation matrix with no rotation, take a shortcut.
 		srcT := src.(*textureImpl)
 		srSize := sr.Size()
 		newRectangle := image.Rectangle{
 			Min: image.Point{int(src2dst[2]), int(src2dst[5])},
 			Max: image.Point{int(src2dst[2]) + srSize.X, int(src2dst[5]) + srSize.Y},
 		}
-		w.s.ctl.SetOp(op)
-		fmt.Printf("Here I am, %d %d %s\n", w.winImageId, srcT.textureId, newRectangle)
-		w.s.ctl.Draw(uint32(w.winImageId), uint32(srcT.textureId), uint32(srcT.textureId), newRectangle, sr.Min, image.ZP)
+		w.s.ctl.Draw(uint32(w.winImageId), uint32(srcT.textureId), uint32(srcT.textureId), newRectangle, sr.Min, image.ZP, op)
 		return
 
 	}
@@ -114,10 +111,9 @@ func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectang
 
 	// 4. Upload the transformed data to the new ImageId
 	w.s.ctl.ReplaceSubimage(imageId, newOriginRectangle, transformedImage.Pix)
-	// 3. SetOp
-	w.s.ctl.SetOp(op)
-	// 4. Draw.
-	w.s.ctl.Draw(uint32(w.winImageId), imageId, imageId, newRectangle, image.ZP, image.ZP)
+
+	// 5. Draw.
+	w.s.ctl.Draw(uint32(w.winImageId), imageId, imageId, newRectangle, image.ZP, image.ZP, op)
 	// the image is already used and there's no way to reference it, so we might as well free it
 	// now instead of waiting until Release() is called.
 	w.s.ctl.FreeID(imageId)
@@ -155,8 +151,7 @@ func newWindowImpl(s *screenImpl) *windowImpl {
 	}
 	// tell the window it's current size before doing anything.
 	w.Queue.Send(size.Event{WidthPx: r.Max.X, HeightPx: r.Max.Y})
-	// and after it knows the size, tell it to paint.
+	// and after it knows the size, tell the program using it to paint.
 	w.Queue.Send(paint.Event{})
-	redrawWindow(s, s.windowFrame)
 	return w
 }

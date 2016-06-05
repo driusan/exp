@@ -13,8 +13,8 @@ import (
 
 // readWctl reads /dev/wctl to get the current Plan 9 window
 // size. This is done once on startup to figure out the frame
-// that will be used for drawing into. After that, resize
-// and move events come through /dev/mouse.
+// that will be used for drawing into, and after every resize
+// event that comes from /dev/mouse to establish the new viewport.
 func readWctl() (image.Rectangle, error) {
 	ctl, err := os.OpenFile("/dev/wctl", os.O_RDWR, 0644)
 	if err != nil {
@@ -31,6 +31,6 @@ func readWctl() (image.Rectangle, error) {
 	// remove 4 pixels from each side to take rio's borders into consideration.
 	return image.Rectangle{
 		Min: image.Point{strToInt(sizes[0]) + 4, strToInt(sizes[1]) + 4},
-		Max: image.Point{strToInt(sizes[2]) - 8, strToInt(sizes[3]) - 8},
+		Max: image.Point{strToInt(sizes[2]) - 4, strToInt(sizes[3]) - 4},
 	}, nil
 }

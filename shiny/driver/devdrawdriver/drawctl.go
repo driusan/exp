@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // A DrawCtrler is an object which holds references to
@@ -28,6 +29,9 @@ type DrawCtrler struct {
 	// the next available ID to use when allocating
 	// an image
 	nextId uint32
+
+	// A mutex to avoid race conditions with Draw/SetOp
+	drawMu sync.Mutex
 }
 
 // A DrawCtlMsg represents the data that is returned from
@@ -213,8 +217,10 @@ func (d *DrawCtrler) FreeID(id uint32) {
 	d.sendMessage('f', msg)
 }
 
-// SetOp sets the compositing operation for the next draw to op
-func (d *DrawCtrler) SetOp(op draw.Op) {
+// SetOp sets the compositing operation for the next draw to op.
+// This isn't exposed, because it should only be called by Draw,
+// which needs to apply a mutex.
+func (d *DrawCtrler) setOp(op draw.Op) {
 	// valid options according to draw(2):
 	//	Clear = 0
 	//	SinD  = 8
@@ -241,7 +247,12 @@ func (d *DrawCtrler) SetOp(op draw.Op) {
 //    d dstid[4] srcid[4] maskid[4] dstr[4*4] srcp[2*4] maskp[2*4]
 // to /dev/draw/n/data.
 // See draw(3) for details
-func (d *DrawCtrler) Draw(dstid, srcid, maskid uint32, r image.Rectangle, srcp, maskp image.Point) {
+func (d *DrawCtrler) Draw(dstid, srcid, maskid uint32, r image.Rectangle, srcp, maskp image.Point, op draw.Op) {
+	d.drawMu.Lock()
+	defer d.drawMu.Unlock()
+
+	d.setOp(op)
+
 	msg := make([]byte, 44)
 	binary.LittleEndian.PutUint32(msg[0:], dstid)
 	binary.LittleEndian.PutUint32(msg[4:], srcid)
@@ -346,9 +357,8 @@ func compress(pix []byte) []byte {
 			// bytes. Subsequent bytes are the literal pixel data."
 			//
 			// If there were no matches, we just add as much data
-			// as we can in order to give the next bit a better
-			// chance of finding something to match again.
-			// This should probably be more intelligent.
+			// as we can in order to give the next bit pixel a better
+			// chance of finding something to match against.
 			if left := len(pix) - i; left >= 128 {
 				val = append(val, 0xFF)
 				val = append(val, pix[i:i+128]...)

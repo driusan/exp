@@ -59,8 +59,7 @@ func (u *uploadImpl) Fill(dr image.Rectangle, src color.Color, op draw.Op) {
 	defer u.ctl.FreeID(fillID)
 
 	// then draw it on top of this image.
-	u.ctl.SetOp(op)
-	u.ctl.Draw(uint32(u.imageId), fillID, maskID, dr, image.ZP, image.ZP)
+	u.ctl.Draw(uint32(u.imageId), fillID, maskID, dr, image.ZP, image.ZP, op)
 }
 
 func newUploadImpl(s *screenImpl, size image.Rectangle, c color.Color) *uploadImpl {

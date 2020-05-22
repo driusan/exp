@@ -186,11 +186,16 @@ func (d *DrawCtrler) FreeScreen(id screenId) {
 //
 // This returns the ID that can be used to reference the allocated buffer
 func (d *DrawCtrler) AllocBuffer(refresh byte, repl bool, r, clipr image.Rectangle, color color.Color) uint32 {
-	msg := make([]byte, 50)
-	// id is the next available ID.
 	d.nextId += 1
 	newId := d.nextId
-	binary.LittleEndian.PutUint32(msg[0:], newId)
+	//return d.allocBuffer(newId, refresh, true, r, clipr, color) 
+	return d.allocBuffer(newId, refresh, repl, r, clipr, color) 
+}
+
+func (d *DrawCtrler) allocBuffer(id uint32, refresh byte, repl bool, r, clipr image.Rectangle, color color.Color) uint32 {
+	msg := make([]byte, 50)
+	// id is the next available ID.
+	binary.LittleEndian.PutUint32(msg[0:], id)
 	// refresh can just be passed along directly.
 	msg[8] = refresh
 	// RGBA channel. This is the same format as image.RGBA.Pix,
@@ -229,7 +234,7 @@ func (d *DrawCtrler) AllocBuffer(refresh byte, repl bool, r, clipr image.Rectang
 	msg[49] = byte(rd >> 8)
 
 	d.sendMessage('b', msg)
-	return newId
+	return id
 }
 
 // FreeID will release the resources held by the imageID in this

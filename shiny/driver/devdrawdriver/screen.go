@@ -98,7 +98,7 @@ func repositionWindow(s *screenImpl, r image.Rectangle) {
 		binary.LittleEndian.PutUint32(args[0:], uint32(winId))
 		s.ctl.sendMessage('o', args)
 
-		s.ctl.Reclip(uint32(winId), false, image.Rectangle{image.ZP, r.Size()})
+		//s.ctl.Reclip(uint32(winId), true, image.Rectangle{image.ZP, r.Size()})
 		//s.ctl.Reclip(uint32(winId), false, r)
 	}
 }

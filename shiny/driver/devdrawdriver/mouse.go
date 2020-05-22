@@ -64,6 +64,7 @@ func mouseEventHandler(notifier chan *mouse.Event, s *screenImpl) {
 			}
 
 			s.windowFrame = windowSize
+			s.w.resize(windowSize)
 			repositionWindow(s, s.windowFrame)
 			if s.w != nil {
 				sz := s.windowFrame.Size()

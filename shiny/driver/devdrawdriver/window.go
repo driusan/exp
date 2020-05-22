@@ -134,7 +134,12 @@ func (w *windowImpl) Publish() screen.PublishResult {
 }
 
 func (w *windowImpl) resize(r image.Rectangle) {
-	w.s.ctl.Reclip(uint32(w.winImageId), false, r)
+	w.s.ctl.Reclip(uint32(0), false, r)
+	w.s.ctl.FreeID(w.uploadImpl.imageId)
+	sz := image.Rectangle{image.ZP, r.Size()}
+	w.s.ctl.allocBuffer(w.uploadImpl.imageId, 0, false, sz, sz, color.RGBA{255, 0, 255, 255})
+	//w.Fill(r, color.Black, draw.Src)
+	
 
 }
 func newWindowImpl(s *screenImpl) *windowImpl {

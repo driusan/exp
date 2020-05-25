@@ -139,7 +139,6 @@ func (w *windowImpl) resize(r image.Rectangle) {
 	sz := image.Rectangle{image.ZP, r.Size()}
 	w.s.ctl.allocBuffer(w.uploadImpl.imageId, 0, false, sz, sz, color.RGBA{255, 0, 255, 255})
 	//w.Fill(r, color.Black, draw.Src)
-	
 
 }
 func newWindowImpl(s *screenImpl) *windowImpl {

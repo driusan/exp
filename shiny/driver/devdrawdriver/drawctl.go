@@ -188,8 +188,8 @@ func (d *DrawCtrler) FreeScreen(id screenId) {
 func (d *DrawCtrler) AllocBuffer(refresh byte, repl bool, r, clipr image.Rectangle, color color.Color) uint32 {
 	d.nextId += 1
 	newId := d.nextId
-	//return d.allocBuffer(newId, refresh, true, r, clipr, color) 
-	return d.allocBuffer(newId, refresh, repl, r, clipr, color) 
+	//return d.allocBuffer(newId, refresh, true, r, clipr, color)
+	return d.allocBuffer(newId, refresh, repl, r, clipr, color)
 }
 
 func (d *DrawCtrler) allocBuffer(id uint32, refresh byte, repl bool, r, clipr image.Rectangle, color color.Color) uint32 {

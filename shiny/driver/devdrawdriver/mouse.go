@@ -170,12 +170,20 @@ func mouseEventHandler(notifier chan *mouse.Event, s *screenImpl) {
 			}
 
 			// WheelUp start
-			if (buttons&MouseScrollUp) != 0 && (prevmask&MouseScrollUp) == 0 {
+			if (buttons & MouseScrollUp) != 0 {
+				if (prevmask & MouseScrollUp) == 0 {
+					notifier <- &mouse.Event{
+						X:         float32(x),
+						Y:         float32(y),
+						Button:    mouse.ButtonWheelUp,
+						Direction: mouse.DirPress,
+					}
+				}
 				notifier <- &mouse.Event{
 					X:         float32(x),
 					Y:         float32(y),
 					Button:    mouse.ButtonWheelUp,
-					Direction: mouse.DirPress,
+					Direction: mouse.DirStep,
 				}
 				sentEvt = true
 			}
@@ -190,12 +198,20 @@ func mouseEventHandler(notifier chan *mouse.Event, s *screenImpl) {
 				sentEvt = true
 			}
 			// WheelDown start
-			if (buttons&MouseScrollDown) != 0 && (prevmask&MouseScrollDown) == 0 {
+			if (buttons & MouseScrollDown) != 0 {
+				if (prevmask & MouseScrollDown) == 0 {
+					notifier <- &mouse.Event{
+						X:         float32(x),
+						Y:         float32(y),
+						Button:    mouse.ButtonWheelDown,
+						Direction: mouse.DirPress,
+					}
+				}
 				notifier <- &mouse.Event{
 					X:         float32(x),
 					Y:         float32(y),
 					Button:    mouse.ButtonWheelDown,
-					Direction: mouse.DirPress,
+					Direction: mouse.DirStep,
 				}
 				sentEvt = true
 			}
